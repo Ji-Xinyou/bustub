@@ -114,7 +114,7 @@ class RowMatrix : public Matrix<T> {
    */
   RowMatrix(int rows, int cols) : Matrix<T>(rows, cols) {
     data_ = new T *[rows * cols];
-    for (int i = 0; i < rows; ++i){
+    for (int i = 0; i < rows; ++i) {
       data_[i] = &this->linear_[i * cols];
     }
   }
@@ -144,7 +144,7 @@ class RowMatrix : public Matrix<T> {
    * @throws OUT_OF_RANGE if either index is out of range
    */
   auto GetElement(int i, int j) const -> T override {
-    if (i >= this->rows_ || i < 0 || j >= this->cols_ || j < 0){
+    if (i >= this->rows_ || i < 0 || j >= this->cols_ || j < 0) {
       throw Exception(bustub::ExceptionType::OUT_OF_RANGE, "OUTOFRANGE");
     }
 
@@ -162,7 +162,7 @@ class RowMatrix : public Matrix<T> {
    * @throws OUT_OF_RANGE if either index is out of range
    */
   void SetElement(int i, int j, T val) override {
-    if (i >= this->rows_ || i < 0 || j >= this->cols_ || j < 0){
+    if (i >= this->rows_ || i < 0 || j >= this->cols_ || j < 0) {
       throw Exception(bustub::ExceptionType::OUT_OF_RANGE, "OUTOFRANGE");
     }
 

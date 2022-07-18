@@ -121,6 +121,26 @@ class BufferPoolManagerInstance : public BufferPoolManager {
    */
   void ValidatePageId(page_id_t page_id) const;
 
+  /**
+   * returns INVALID_FRAME_ID if the page is not in the page_table_, else return its corresponding frame id
+   * @param page_id
+   */
+  frame_id_t PageidToFrameid(page_id_t page_id);
+
+  /**
+   * if the page does not present or is not dirty, do nothing. Else this function write the data back to disk
+   * and reset the dirty flag of the page
+   * @param page_id
+   */
+  void WritePageToDiskIfDirty(page_id_t page_id);
+
+  /**
+   * returns a frame_id for use, first from free list, if not any, use replacer
+   * returns INVALID_FRAME_ID when both places have no frame to spare
+   * when finding a victim page from replacer, this function also write it back to disk if the page is dirty
+   */
+  frame_id_t FindVictimPage();
+
   /** Number of pages in the buffer pool. */
   const size_t pool_size_;
   /** How many instances are in the parallel BPM (if present, otherwise just 1 BPI) */
