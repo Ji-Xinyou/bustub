@@ -72,12 +72,12 @@ auto HASH_TABLE_BUCKET_TYPE::Remove(KeyType key, ValueType value, KeyComparator 
       }
       continue;
     }
-    if((cmp(key, KeyAt(i)) == 0) && (value == ValueAt(i))) {
+    if ((cmp(key, KeyAt(i)) == 0) && (value == ValueAt(i))) {
       ClearReadable(i);
       return true;
     }
   }
-  return false; // not found
+  return false;  // not found
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
@@ -136,9 +136,9 @@ auto HASH_TABLE_BUCKET_TYPE::NumReadable() -> uint32_t {
   uint32_t nreadable = 0;
   for (uint32_t i = 0; i < static_cast<int>(((BUCKET_ARRAY_SIZE - 1) / 8 + 1)); ++i) {
     uint8_t r = readable_[i];
-    while (r) {
-	r &= (r - 1);
-	nreadable++;
+    if (r != 0) {
+      nreadable += (((r)&1) + ((r >> 1) & 1) + ((r >> 2) & 1) + ((r >> 3) & 1) + ((r >> 4) & 1) + ((r >> 5) & 1) +
+                    ((r >> 6) & 1) + ((r >> 7) & 1));
     }
   }
   return nreadable;

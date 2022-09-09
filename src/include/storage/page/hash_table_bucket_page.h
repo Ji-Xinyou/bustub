@@ -103,7 +103,7 @@ class HashTableBucketPage {
 
   /**
    * ClearOccupied - inverse of SetOccupied
-   * 
+   *
    * @param bucket_idx the index to update
    */
   void ClearOccupied(uint32_t bucket_idx);
@@ -126,7 +126,7 @@ class HashTableBucketPage {
 
   /**
    * ClearReable - inverse of SetReadable
-   * 
+   *
    * @param bucket_idx the index to update
    */
   void ClearReadable(uint32_t bucket_idx);
