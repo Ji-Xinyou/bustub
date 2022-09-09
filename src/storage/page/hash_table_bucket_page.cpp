@@ -34,7 +34,8 @@ auto HASH_TABLE_BUCKET_TYPE::GetValue(KeyType key, KeyComparator cmp, std::vecto
       result->push_back(ValueAt(i));
     }
   }
-  return result->empty();
+
+  return !result->empty();
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
@@ -90,7 +91,10 @@ auto HASH_TABLE_BUCKET_TYPE::ValueAt(uint32_t bucket_idx) const -> ValueType {
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
-void HASH_TABLE_BUCKET_TYPE::RemoveAt(uint32_t bucket_idx) {}
+void HASH_TABLE_BUCKET_TYPE::RemoveAt(uint32_t bucket_idx) {
+  SetOccupied(bucket_idx);
+  ClearReadable(bucket_idx);
+}
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::IsOccupied(uint32_t bucket_idx) const -> bool {
@@ -130,13 +134,11 @@ auto HASH_TABLE_BUCKET_TYPE::IsFull() -> bool {
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::NumReadable() -> uint32_t {
   uint32_t nreadable = 0;
-  for (uint32_t i = 0; i < ((BUCKET_ARRAY_SIZE - 1) / 8 + 1); ++i) {
+  for (uint32_t i = 0; i < static_cast<int>(((BUCKET_ARRAY_SIZE - 1) / 8 + 1)); ++i) {
     uint8_t r = readable_[i];
     while (r) {
-      if (r & 1) {
-        nreadable++;
-      }
-      r >>= 1;
+	r &= (r - 1);
+	nreadable++;
     }
   }
   return nreadable;
