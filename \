@@ -45,22 +45,21 @@ auto HASH_TABLE_BUCKET_TYPE::Insert(KeyType key, ValueType value, KeyComparator 
     return false;
   }
 
-  for (size_t i = 0; i < BUCKET_ARRAY_SIZE; ++i) {
-    if ((IsReadable(i)) && (cmp(KeyAt(i), key) == 0) && (value == ValueAt(i))) {
-      return false;
-    }
+  // no duplicate
+  std::vector<ValueType> result;
+  GetValue(key, cmp, &result);
+  if (std::find(result.cbegin(), result.cend(), value) != result.cend()) {
+    return false;
   }
 
-  for (size_t i = 0; i < BUCKET_ARRAY_SIZE; ++i) {
-    if (!IsReadable(i)) {
-      array_[i] = MappingType(key, value);
-      SetOccupied(i);
+  for (uint32_t i = 0; i < BUCKET_ARRAY_SIZE; ++i) {
+    if (!IsReadable(i)) {  // tomb stone or empty
+      array_[i] = std::make_pair(key, value);
       SetReadable(i);
+      SetOccupied(i);
       return true;
     }
   }
-
-  LOG_ERROR("Insert(): invalid line reached");
   return false;  // unreachable
 }
 
