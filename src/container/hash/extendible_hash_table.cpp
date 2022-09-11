@@ -254,20 +254,20 @@ void HASH_TABLE_TYPE::Merge(Transaction *transaction, const KeyType &key, const 
   table_latch_.WLock();
   HashTableDirectoryPage *dir_page = FetchDirectoryPage();
   uint32_t bucket_idx = KeyToDirectoryIndex(key, dir_page);
-  bool shrinked = RealMerge(transaction, dir_page, bucket_idx);
-  buffer_pool_manager_->UnpinPage(directory_page_id_, shrinked);
+  RealMerge(transaction, dir_page, bucket_idx);
+  buffer_pool_manager_->UnpinPage(directory_page_id_, true);
   table_latch_.WUnlock();
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
-bool HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage *dir_page, uint32_t bucket_idx) {
+void HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage *dir_page, uint32_t bucket_idx) {
   page_id_t bucket_page_id = dir_page->GetBucketPageId(bucket_idx);
   HASH_TABLE_BUCKET_TYPE *bucket = FetchBucketPage(bucket_page_id);
 
   uint32_t bucket_ld = dir_page->GetLocalDepth(bucket_idx);
   if (!bucket->IsEmpty() || !(bucket_ld > 0)) {
     buffer_pool_manager_->UnpinPage(bucket_page_id, false);
-    return false;
+    return;
   }
 
   uint32_t split_idx = dir_page->GetSplitImageIndex(bucket_idx);
@@ -275,7 +275,7 @@ bool HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage
 
   if (split_page_id == bucket_page_id) {
     buffer_pool_manager_->UnpinPage(bucket_page_id, false);
-    return false;
+    return;
   }
 
   // merge if all of the followings
@@ -285,7 +285,7 @@ bool HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage
   uint32_t split_ld = dir_page->GetLocalDepth(split_idx);
   if (bucket_ld != split_ld) {
     buffer_pool_manager_->UnpinPage(bucket_page_id, false);
-    return false;
+    return;
   }
 
   // merge by wiring all bucket which points at *bucket* to *split*
@@ -302,10 +302,8 @@ bool HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage
   buffer_pool_manager_->UnpinPage(bucket_page_id, false);
   buffer_pool_manager_->DeletePage(bucket_page_id);
 
-  bool shrinked = false;
   if (dir_page->CanShrink()) {
     dir_page->DecrGlobalDepth();
-    shrinked = true;
   }
 
   for (size_t i = 0; i < dir_page->Size(); ++i) {
@@ -313,13 +311,11 @@ bool HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage
     page_id_t id = dir_page->GetBucketPageId(i);
     if (bucket->IsEmpty()) {
       buffer_pool_manager_->UnpinPage(id, false);
-      bool shrinked_again = RealMerge(transaction, dir_page, i);
-      return shrinked_again || shrinked;
+      RealMerge(transaction, dir_page, i);
+    } else {
+      buffer_pool_manager_->UnpinPage(id, false);
     }
-    buffer_pool_manager_->UnpinPage(id, false);
   }
-
-  return shrinked;
 }
 
 /*****************************************************************************

@@ -205,6 +205,15 @@ TEST(HashTableTest, SizeTest) {
 
   ht.VerifyIntegrity();
 
+  // no keys should be found
+  for (int i = 0; i < sz; i++) {
+    std::vector<int> res;
+    ht.GetValue(nullptr, i, &res);
+    EXPECT_EQ(0, res.size()) << "found key " << i;
+  }
+
+  EXPECT_TRUE(ht.GetGlobalDepth() <= 1) << "gd is " << ht.GetGlobalDepth();
+
   disk_manager->ShutDown();
   remove("test.db");
   delete disk_manager;
