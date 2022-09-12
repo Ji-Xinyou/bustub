@@ -118,7 +118,7 @@ TEST(HashTableTest, SampleTest) {
 }
 
 TEST(HashTableTest, SizeTest) {
-  int sz = 10000;
+  int sz = 50000;
   auto *disk_manager = new DiskManager("test.db");
   auto *bpm = new BufferPoolManagerInstance(50, disk_manager);
   ExtendibleHashTable<int, int, IntComparator> ht("blah", bpm, IntComparator(), HashFunction<int>());
