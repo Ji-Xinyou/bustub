@@ -111,7 +111,7 @@ auto HASH_TABLE_TYPE::GetValue(Transaction *transaction, const KeyType &key, std
  *****************************************************************************/
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const ValueType &value) -> bool {
-  table_latch_.WLock();
+  table_latch_.RLock();
 
   HashTableDirectoryPage *dir_page = FetchDirectoryPage();
   page_id_t bucket_page_id = KeyToPageId(key, dir_page);
@@ -127,7 +127,7 @@ auto HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const
     buffer_pool_manager_->UnpinPage(directory_page_id_, false);
     buffer_pool_manager_->UnpinPage(bucket_page_id, false);
     p->WUnlatch();
-    table_latch_.WUnlock();
+    table_latch_.RUnlock();
     return SplitInsert(transaction, key, value);
   }
   bool success = bucket->Insert(key, value, comparator_);
@@ -136,7 +136,7 @@ auto HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const
   buffer_pool_manager_->UnpinPage(directory_page_id_, false);
 
   p->WUnlatch();
-  table_latch_.WUnlock();
+  table_latch_.RUnlock();
 
   return success;
 }
