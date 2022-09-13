@@ -59,8 +59,18 @@ void HashTableDirectoryPage::IncrLocalDepth(uint32_t bucket_idx) { local_depths_
 
 void HashTableDirectoryPage::DecrLocalDepth(uint32_t bucket_idx) { local_depths_[bucket_idx]--; }
 
-auto HashTableDirectoryPage::GetLocalHighBit(uint32_t bucket_idx) -> uint32_t { return 0; }
+/**
+ * if local depth is 2, return 000...010
+ */
+auto HashTableDirectoryPage::GetLocalHighBit(uint32_t bucket_idx) -> uint32_t {
+  uint32_t ld = GetLocalDepth(bucket_idx);
+  return (1 << (ld - 1));
+}
 
+/**
+ * For a bucket with capacity of 8, the split image pair are as follows
+ * 0 - 4, 1 - 5, 2 - 6, 3 - 7
+ */
 auto HashTableDirectoryPage::GetSplitImageIndex(uint32_t bucket_idx) -> uint32_t {
   uint32_t gd = GetGlobalDepth();
   uint32_t n = (1 << gd) / 2;

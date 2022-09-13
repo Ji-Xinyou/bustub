@@ -146,7 +146,14 @@ auto HASH_TABLE_BUCKET_TYPE::NumReadable() -> uint32_t {
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 auto HASH_TABLE_BUCKET_TYPE::IsEmpty() -> bool {
-  return NumReadable() == 0;
+  // we do not need all value from readable_
+  // if any has a bit 1, we can safely return false
+  for (uint32_t i = 0; i < static_cast<int>(((BUCKET_ARRAY_SIZE - 1) / 8 + 1)); ++i) {
+    if ((readable_[i] & 0xFF) != 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 template <typename KeyType, typename ValueType, typename KeyComparator>

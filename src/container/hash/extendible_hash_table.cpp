@@ -207,13 +207,13 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
   // for all bucket pointing at bkt1, but should point bkt2 now, we change them
   // the old bucket shares the prefix of (localdepth - 1) of bkt2
   uint32_t ld = dir_page->GetLocalDepth(bkt2_idx);
-  uint32_t shared_bits = bkt2_idx & ((1 << (ld - 1)) - 1);
+  uint32_t local_high_bit = dir_page->GetLocalHighBit(bkt2_idx);
+  uint32_t shared_bits = bkt2_idx & (local_high_bit - 1);
   for (size_t i = shared_bits; i < dir_page->Size(); i += (1 << ld)) {
     if (i == bkt1_idx || i == bkt2_idx) {
       continue;
     }
-    uint32_t judge_bit = 1 << (ld - 1);
-    if ((i & judge_bit) != 0) {
+    if ((i & local_high_bit) != 0) {
       dir_page->SetBucketPageId(i, bkt2_page_id);
       dir_page->SetLocalDepth(i, dir_page->GetLocalDepth(bkt2_idx));
     }
@@ -258,11 +258,14 @@ auto HASH_TABLE_TYPE::Remove(Transaction *transaction, const KeyType &key, const
 
   HashTableDirectoryPage *dir_page = FetchDirectoryPage();
   page_id_t bucket_page_id = KeyToPageId(key, dir_page);
+
   HASH_PAGE_BUCKET_TYPE p_bucket = FetchBucketPage(bucket_page_id);
   Page *p = p_bucket.first;
+
   p->WLatch();
   HASH_TABLE_BUCKET_TYPE *bucket = p_bucket.second;
   bool success = bucket->Remove(key, value, comparator_);
+  // If a bucket is empty after a successful removal, merge it
   if (success && bucket->IsEmpty()) {
     buffer_pool_manager_->UnpinPage(directory_page_id_, false);
     buffer_pool_manager_->UnpinPage(bucket_page_id, success);
@@ -292,6 +295,10 @@ void HASH_TABLE_TYPE::Merge(Transaction *transaction, const KeyType &key, const 
   table_latch_.WUnlock();
 }
 
+/**
+ * RealMerge should be entered with Wlock
+ * This function make recursive call to merge possible since merge is often recursive
+ */
 template <typename KeyType, typename ValueType, typename KeyComparator>
 void HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage *dir_page, uint32_t bucket_idx) {
   page_id_t bucket_page_id = dir_page->GetBucketPageId(bucket_idx);
@@ -344,24 +351,31 @@ void HASH_TABLE_TYPE::RealMerge(Transaction *transaction, HashTableDirectoryPage
   buffer_pool_manager_->DeletePage(bucket_page_id);
   p->WUnlatch();
 
+  bool shrinked = false;
   if (dir_page->CanShrink()) {
     dir_page->DecrGlobalDepth();
+    shrinked = true;
   }
 
-  for (size_t i = 0; i < dir_page->Size(); ++i) {
-    page_id_t id = dir_page->GetBucketPageId(i);
-    HASH_PAGE_BUCKET_TYPE p_bucket_i = FetchBucketPage(dir_page->GetBucketPageId(i));
-    Page *p = p_bucket_i.first;
+  // If the hash table has shrinked, the correspondence(of index) between
+  // split images may change, since the size of hash table has changed
+  // Therefore we should try merge every bucket again
+  if (shrinked) {
+    for (size_t i = 0; i < dir_page->Size(); ++i) {
+      page_id_t id = dir_page->GetBucketPageId(i);
+      HASH_PAGE_BUCKET_TYPE p_bucket_i = FetchBucketPage(dir_page->GetBucketPageId(i));
+      Page *p = p_bucket_i.first;
 
-    p->RLatch();
-    HASH_TABLE_BUCKET_TYPE *bucket = p_bucket_i.second;
-    if (bucket->IsEmpty()) {
-      buffer_pool_manager_->UnpinPage(id, false);
-      p->RUnlatch();
-      RealMerge(transaction, dir_page, i);
-    } else {
-      buffer_pool_manager_->UnpinPage(id, false);
-      p->RUnlatch();
+      p->RLatch();
+      HASH_TABLE_BUCKET_TYPE *bucket = p_bucket_i.second;
+      if (bucket->IsEmpty()) {
+        buffer_pool_manager_->UnpinPage(id, false);
+        p->RUnlatch();
+        RealMerge(transaction, dir_page, i);
+      } else {
+        buffer_pool_manager_->UnpinPage(id, false);
+        p->RUnlatch();
+      }
     }
   }
 }
