@@ -159,7 +159,7 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
 
   // double check, if remove happens just before the SplitInsert is called
   // There may be no need to split
-  if(!bkt1->IsFull()) {
+  if (!bkt1->IsFull()) {
     bool retval = bkt1->Insert(key, value, comparator_);
     buffer_pool_manager_->UnpinPage(bkt1_page_id, true);
     buffer_pool_manager_->UnpinPage(directory_page_id_, false);
