@@ -59,6 +59,14 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
+  /** The table info */
+  const TableInfo *table_info_;
+  /** The index info array, need to be updated for every valid insertion */
+  const std::vector<IndexInfo *> index_infos_;
+  /** If the insert data is from a child executor, use this */
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  /** The pos pointer of raw_data from the plan */
+  size_t pos_;
 };
 
 }  // namespace bustub

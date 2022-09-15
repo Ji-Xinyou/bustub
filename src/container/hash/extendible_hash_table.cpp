@@ -158,7 +158,7 @@ auto HASH_TABLE_TYPE::SplitInsert(Transaction *transaction, const KeyType &key, 
   HASH_TABLE_BUCKET_TYPE *bkt1 = p_bucket1.second;
 
   // double check, if remove happens just before the SplitInsert is called
-  // There may be no need to split
+  // There may be no need to split, but if we split, error will occur
   if (!bkt1->IsFull()) {
     bool retval = bkt1->Insert(key, value, comparator_);
     buffer_pool_manager_->UnpinPage(bkt1_page_id, true);

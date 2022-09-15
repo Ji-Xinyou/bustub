@@ -14,10 +14,41 @@
 
 namespace bustub {
 
-SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan) : AbstractExecutor(exec_ctx) {}
+SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan)
+    : AbstractExecutor(exec_ctx),
+      plan_(plan),
+      table_info_(exec_ctx->GetCatalog()->GetTable(plan->GetTableOid())),
+      predicate_(plan->GetPredicate()),
+      current_(nullptr, RID{}, nullptr),
+      end_(nullptr, RID{}, nullptr) {}
 
-void SeqScanExecutor::Init() {}
+void SeqScanExecutor::Init() {
+  current_ = table_info_->table_->Begin(exec_ctx_->GetTransaction());
+  end_ = table_info_->table_->End();
+}
 
-auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool { return false; }
+/**
+ * return true if a tuple is emitted, false if no more tuple
+ */
+auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+  while (current_ != end_) {
+    TableIterator iter = current_++;
+    if (predicate_) {
+      // If there is a predicate, we have to evaluate the tuple
+      Value eval = predicate_->Evaluate(&(*iter), &table_info_->schema_);
+      if (eval.GetAs<bool>()) {
+        *tuple = *iter;
+        *rid = iter->GetRid();
+        return true;
+      }
+    } else {
+      // If there is no predicate, we just return the tuple
+      *tuple = *iter;
+      *rid = iter->GetRid();
+      return true;
+    }
+  }
+  return false;
+}
 
 }  // namespace bustub
