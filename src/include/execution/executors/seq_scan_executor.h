@@ -59,4 +59,5 @@ class SeqScanExecutor : public AbstractExecutor {
   /** The end of table's iterator, indicating the table is fully traversed */
   TableIterator end_;
 };
+
 }  // namespace bustub

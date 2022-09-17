@@ -60,6 +60,12 @@ class ExecutionEngine {
       Tuple tuple;
       RID rid;
       while (executor->Next(&tuple, &rid)) {
+        bool skip = (plan->GetType() == PlanType::Insert) || (plan->GetType() == PlanType::Update) ||
+                    (plan->GetType() == PlanType::Delete);
+        if (skip) {
+          continue;
+        }
+
         if (result_set != nullptr) {
           result_set->push_back(tuple);
         }

@@ -33,19 +33,17 @@ void InsertExecutor::Init() {
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   bool inserted = false;
-  Tuple t = Tuple{};
-  RID r = RID{};
+  Tuple t;
+  RID r;
 
   // insert to table
   if (plan_->IsRawInsert()) {
     if (pos_ < plan_->RawValues().size()) {  // valid position
       std::vector<Value> raw_value = plan_->RawValues()[pos_++];
       t = Tuple(raw_value, &table_info_->schema_);
-      // FIXME: should rid be put in here?
       inserted = table_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction());
     }
   } else {
-    // FIXME: should tuple and rid be used?
     if (child_executor_->Next(&t, &r)) {
       inserted = table_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction());
     }
@@ -53,11 +51,10 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
   // update index
   if (inserted && !index_infos_.empty()) {
-    LOG_DEBUG("inserting to index");
     for (auto &it : index_infos_) {
       Tuple key;
       key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-      it->index_->InsertEntry(key, RID{}, exec_ctx_->GetTransaction());
+      it->index_->InsertEntry(key, r, exec_ctx_->GetTransaction());
     }
   }
 

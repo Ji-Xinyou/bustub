@@ -32,18 +32,18 @@ void DeleteExecutor::Init() {
 
 auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   bool deleted = false;
-  Tuple *t = nullptr;
-  RID *r = nullptr;
-  if (child_executor_->Next(t, r)) {
+  Tuple t;
+  RID r;
+  if (child_executor_->Next(&t, &r)) {
     // update table
-    deleted = table_info_->table_->MarkDelete(*r, exec_ctx_->GetTransaction());
+    deleted = table_info_->table_->MarkDelete(r, exec_ctx_->GetTransaction());
   }
 
   if (deleted && !index_infos_.empty()) {
     // update index
     for (auto &it : index_infos_) {
-      Tuple key = t->KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-      it->index_->DeleteEntry(key, RID{}, exec_ctx_->GetTransaction());
+      Tuple key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
+      it->index_->DeleteEntry(key, r, exec_ctx_->GetTransaction());
     }
   }
 

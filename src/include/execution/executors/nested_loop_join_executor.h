@@ -64,8 +64,8 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   /** Whether the left table is completely traversed */
   bool left_done_;
 
-  Tuple *left_tuple_;
-  RID *left_rid_;
+  Tuple left_tuple_;
+  RID left_rid_;
 };
 
 }  // namespace bustub

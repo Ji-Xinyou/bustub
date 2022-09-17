@@ -36,22 +36,22 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   }
 
   bool updated = false;
-  Tuple *t = nullptr;
-  RID *r = nullptr;
+  Tuple t;
+  RID r;
 
-  if (child_executor_->Next(t, r)) {
+  if (child_executor_->Next(&t, &r)) {
     // update table
-    Tuple updated_tuple = GenerateUpdatedTuple(*t);
-    updated = table_info_->table_->UpdateTuple(updated_tuple, *r, exec_ctx_->GetTransaction());
+    Tuple updated_tuple = GenerateUpdatedTuple(t);
+    updated = table_info_->table_->UpdateTuple(updated_tuple, r, exec_ctx_->GetTransaction());
 
     // update index
     if (updated && !index_infos_.empty()) {
       for (auto &it : index_infos_) {
         Tuple new_key, old_key;
         new_key = updated_tuple.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-        old_key = t->KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-        it->index_->DeleteEntry(old_key, RID{}, exec_ctx_->GetTransaction());
-        it->index_->InsertEntry(new_key, RID{}, exec_ctx_->GetTransaction());
+        old_key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
+        it->index_->DeleteEntry(old_key, r, exec_ctx_->GetTransaction());
+        it->index_->InsertEntry(new_key, r, exec_ctx_->GetTransaction());
       }
     }
   }
