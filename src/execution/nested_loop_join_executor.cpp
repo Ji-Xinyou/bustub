@@ -48,6 +48,7 @@ begin:
     if (left_done_) {
       return false;
     }
+    goto begin;
   }
 
   // now we are sure we have left tuple and right tuple, we join and evaluate them
