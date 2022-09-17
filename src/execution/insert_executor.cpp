@@ -32,32 +32,35 @@ void InsertExecutor::Init() {
 }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
-    bool inserted = false;
-    // insert to table
-    if (plan_->IsRawInsert()) {
-        if (pos_ < plan_->RawValues().size()) {  // valid position
-            std::vector<Value> raw_value = plan_->RawValues()[pos_++];
-            Tuple t(raw_value, &table_info_->schema_);
-            // FIXME: should rid be put in here?
-            inserted = table_info_->table_->InsertTuple(t, nullptr, exec_ctx_->GetTransaction());
-        }
-    } else {
-        // FIXME: should tuple and rid be used?
-        Tuple *t2;
-        RID *r2;
-        if (child_executor_->Next(t2, r2)) {
-            inserted = table_info_->table_->InsertTuple(*t2, r2, exec_ctx_->GetTransaction());
-        }
+  bool inserted = false;
+  Tuple *t2 = nullptr;
+  RID *r2 = nullptr;
+
+  // insert to table
+  if (plan_->IsRawInsert()) {
+    if (pos_ < plan_->RawValues().size()) {  // valid position
+      std::vector<Value> raw_value = plan_->RawValues()[pos_++];
+      *t2 = Tuple(raw_value, &table_info_->schema_);
+      // FIXME: should rid be put in here?
+      inserted = table_info_->table_->InsertTuple(*t2, nullptr, exec_ctx_->GetTransaction());
     }
-
-    // update index
-    if (inserted && !index_infos_.empty()) {
-        for (auto &it: index_infos_) {
-
-        }
+  } else {
+    // FIXME: should tuple and rid be used?
+    if (child_executor_->Next(t2, r2)) {
+      inserted = table_info_->table_->InsertTuple(*t2, r2, exec_ctx_->GetTransaction());
     }
+  }
 
-    return inserted;
+  // update index
+  if (inserted && !index_infos_.empty()) {
+    for (auto &it : index_infos_) {
+      Tuple key;
+      key = t2->KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
+      it->index_->InsertEntry(key, RID{}, exec_ctx_->GetTransaction());
+    }
+  }
+
+  return inserted;
 }
 
 }  // namespace bustub
