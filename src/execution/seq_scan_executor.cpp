@@ -37,7 +37,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       // generate tuple from output schema
       std::vector<Value> values;
       *tuple = *iter;
-      for (const auto &col: plan_->OutputSchema()->GetColumns()) {
+      for (const auto &col : plan_->OutputSchema()->GetColumns()) {
         values.push_back(col.GetExpr()->Evaluate(tuple, &table_info_->schema_));
       }
       *tuple = Tuple(values, plan_->OutputSchema());

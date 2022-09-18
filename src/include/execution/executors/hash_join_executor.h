@@ -52,8 +52,22 @@ class HashJoinExecutor : public AbstractExecutor {
   auto GetOutputSchema() -> const Schema * override { return plan_->OutputSchema(); };
 
  private:
+  /** Build the ht_ on initialization */
+  void BuildHashTable();
+
   /** The NestedLoopJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+
+  std::unique_ptr<AbstractExecutor> left_executor_;
+  std::unique_ptr<AbstractExecutor> right_executor_;
+
+  /** The hashtable, a key may correspond to a number of tuples */
+  std::unordered_map<HashJoinKey, std::vector<Tuple>> ht_;
+
+  /** The pointer on the tuples for current key (generated from inner_table.next.t) */
+  size_t outer_ptr_;
+  /** The checkpoint buffer of tuples we found for current key */
+  std::vector<Tuple> outer_buf_;
 };
 
 }  // namespace bustub
