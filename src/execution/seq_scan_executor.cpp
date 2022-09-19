@@ -33,7 +33,7 @@ void SeqScanExecutor::Init() {
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   while (current_ != end_) {
     TableIterator iter = current_++;
-    if (!predicate_ || predicate_->Evaluate(&(*iter), &table_info_->schema_).GetAs<bool>()) {
+    if (predicate_ == nullptr || predicate_->Evaluate(&(*iter), &table_info_->schema_).GetAs<bool>()) {
       // generate tuple from output schema
       std::vector<Value> values;
       *tuple = *iter;

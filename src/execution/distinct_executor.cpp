@@ -33,7 +33,7 @@ DistinctExecutor::DistinctExecutor(ExecutorContext *exec_ctx, const DistinctPlan
 
 void DistinctExecutor::Init() {
   child_executor_->Init();
-  dhs_iterator_ = dhs_.begin();  
+  dhs_iterator_ = dhs_.begin();
 }
 
 auto DistinctExecutor::Next(Tuple *tuple, RID *rid) -> bool {

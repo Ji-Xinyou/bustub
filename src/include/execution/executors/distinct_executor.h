@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 #include <utility>
 
 #include "execution/executors/abstract_executor.h"

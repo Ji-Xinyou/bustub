@@ -52,7 +52,7 @@ begin:
   }
 
   // now we are sure we have left tuple and right tuple, we join and evaluate them
-  if (predicate_) {
+  if (predicate_ != nullptr) {
     // use predicate to evaluate them
     Value eval = predicate_->EvaluateJoin(&left_tuple_, plan_->GetLeftPlan()->OutputSchema(), &right_tuple,
                                           plan_->GetRightPlan()->OutputSchema());

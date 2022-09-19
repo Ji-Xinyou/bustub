@@ -12,6 +12,9 @@
 
 #pragma once
 
+#include <unordered_set>
+#include <vector>
+
 #include "common/util/hash_util.h"
 #include "execution/plans/abstract_plan.h"
 
@@ -62,11 +65,11 @@ class DistinctPlanNode : public AbstractPlanNode {
 namespace std {
 
 /** Implement std::hash on DistinctKey */
-template<>
+template <>
 struct hash<bustub::DistinctKey> {
   auto operator()(const bustub::DistinctKey &distinct_key) const -> std::size_t {
     size_t cur_hash = 0;
-    for (const auto &key: distinct_key.tuple_val_) {
+    for (const auto &key : distinct_key.tuple_val_) {
       if (!key.IsNull()) {
         cur_hash = bustub::HashUtil::CombineHashes(cur_hash, bustub::HashUtil::HashValue(&key));
       }
@@ -75,4 +78,4 @@ struct hash<bustub::DistinctKey> {
   }
 };
 
-}
+}  // namespace std

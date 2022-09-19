@@ -47,9 +47,8 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // update index
     if (updated && !index_infos_.empty()) {
       for (auto &it : index_infos_) {
-        Tuple new_key, old_key;
-        new_key = updated_tuple.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-        old_key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
+        Tuple new_key = updated_tuple.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
+        Tuple old_key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
         it->index_->DeleteEntry(old_key, r, exec_ctx_->GetTransaction());
         it->index_->InsertEntry(new_key, r, exec_ctx_->GetTransaction());
       }
