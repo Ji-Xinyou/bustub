@@ -83,7 +83,7 @@ auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       if (it != ht_.end()) {
         outer_ptr_ = 0;
         outer_buf_ = it->second;
-	goto out;
+        goto out;
       }
     }
     return false;
