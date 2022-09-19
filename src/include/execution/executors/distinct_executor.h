@@ -53,5 +53,9 @@ class DistinctExecutor : public AbstractExecutor {
   const DistinctPlanNode *plan_;
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  /** The distinct hash set */
+  std::unordered_set<DistinctKey> dhs_;
+  /** The iterator of the hash set */
+  std::unordered_set<DistinctKey>::iterator dhs_iterator_;
 };
 }  // namespace bustub
