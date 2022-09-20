@@ -17,10 +17,35 @@
 #include <utility>
 #include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
+
+namespace bustub {
+
+/**
+ * This is the key to put into the unordered_map
+ * To put this key into unordered_map, we need to implement operator== and std::hash
+ */
+struct HashJoinKey {
+  Value key_;
+
+  auto operator==(const HashJoinKey &other) const -> bool { return key_.CompareEquals(other.key_) == CmpBool::CmpTrue; }
+};
+
+}  // namespace bustub
+
+namespace std {
+
+/** Implements std::hash on HashJoinKey */
+template <>
+struct hash<bustub::HashJoinKey> {
+  auto operator()(const bustub::HashJoinKey &key) const -> size_t { return bustub::HashUtil::HashValue(&key.key_); }
+};
+
+}  // namespace std
 
 namespace bustub {
 
@@ -70,6 +95,8 @@ class HashJoinExecutor : public AbstractExecutor {
   size_t outer_ptr_;
   /** The checkpoint buffer of tuples we found for current key */
   std::vector<Tuple> outer_buf_;
+  /** Current inner tuple */
+  Tuple cur_inner_;
 };
 
 }  // namespace bustub

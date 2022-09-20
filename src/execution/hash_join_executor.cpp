@@ -35,18 +35,10 @@ void HashJoinExecutor::BuildHashTable() {
   while (left_executor_->Next(&t, &r)) {
     Value k_val = plan_->LeftJoinKeyExpression()->Evaluate(&t, left_executor_->GetOutputSchema());
     HashJoinKey k{k_val};
-    // build Value in hashtable, i.e. tuple
-    std::vector<Value> values;
-    for (const Column &col : plan_->GetLeftPlan()->OutputSchema()->GetColumns()) {
-      values.emplace_back(col.GetExpr()->Evaluate(&t, left_executor_->GetOutputSchema()));
-    }
-    Tuple v = Tuple(values, left_executor_->GetOutputSchema());
-
-    // insert into ht_
     if (ht_.count(k) == 0) {
-      ht_.insert({k, {v}});
+      ht_[k] = {t};
     } else {
-      ht_[k].emplace_back(v);
+      ht_[k].emplace_back(t);
     }
   }
 }
@@ -70,7 +62,7 @@ void HashJoinExecutor::Init() {
 auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   const Schema *left_schema = left_executor_->GetOutputSchema();
   const Schema *right_schema = right_executor_->GetOutputSchema();
-  Tuple t;
+  Tuple t = cur_inner_;
   RID r;
 
   if (outer_ptr_ >= outer_buf_.size()) {
@@ -81,6 +73,7 @@ auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       HashJoinKey k{rval};
       auto it = ht_.find(k);
       if (it != ht_.end()) {
+        cur_inner_ = t;
         outer_ptr_ = 0;
         outer_buf_ = it->second;
         goto out;
@@ -93,12 +86,10 @@ out:
   // combine tuples from outer_buf_, and right_tuple
   std::vector<Value> values;
   for (const Column &col : plan_->OutputSchema()->GetColumns()) {
-    // TODO(bug): here, if use outer_ptr_++ will cause error, idk why
     values.emplace_back(col.GetExpr()->EvaluateJoin(&outer_buf_[outer_ptr_], left_schema, &t, right_schema));
   }
   outer_ptr_++;
   *tuple = Tuple(values, plan_->OutputSchema());
-  *rid = r;  // rid is not used anyway
 
   return true;
 }
