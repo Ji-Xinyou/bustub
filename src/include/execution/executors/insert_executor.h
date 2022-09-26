@@ -57,6 +57,11 @@ class InsertExecutor : public AbstractExecutor {
   /** @return The output schema for the insert */
   auto GetOutputSchema() -> const Schema * override { return plan_->OutputSchema(); };
 
+  /** Lock a tuple */
+  void Lock(const RID &rid);
+
+  void Unlock(const RID &rid);
+
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;

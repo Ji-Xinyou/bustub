@@ -1,4 +1,5 @@
-//===----------------------------------------------------------------------===//
+
+// //===----------------------------------------------------------------------===//
 //
 //                         BusTub
 //
@@ -20,6 +21,7 @@
 
 #include "buffer/buffer_pool_manager_instance.h"
 #include "catalog/table_generator.h"
+#include "common/logger.h"
 #include "concurrency/transaction.h"
 #include "concurrency/transaction_manager.h"
 #include "execution/execution_engine.h"
@@ -163,7 +165,7 @@ void CheckTxnLockSize(Transaction *txn, size_t shared_size, size_t exclusive_siz
 }
 
 // NOLINTNEXTLINE
-TEST_F(TransactionTest, DISABLED_SimpleInsertRollbackTest) {
+TEST_F(TransactionTest, SimpleInsertRollbackTest) {
   // txn1: INSERT INTO empty_table2 VALUES (200, 20), (201, 21), (202, 22)
   // txn1: abort
   // txn2: SELECT * FROM empty_table2;
@@ -178,8 +180,11 @@ TEST_F(TransactionTest, DISABLED_SimpleInsertRollbackTest) {
   auto table_info = exec_ctx1->GetCatalog()->GetTable("empty_table2");
   InsertPlanNode insert_plan{std::move(raw_vals), table_info->oid_};
 
+  LOG_DEBUG("txn1 execute");
   GetExecutionEngine()->Execute(&insert_plan, nullptr, txn1, exec_ctx1.get());
+  LOG_DEBUG("txn1 abort");
   GetTxnManager()->Abort(txn1);
+  LOG_DEBUG("txn abort done");
   delete txn1;
 
   // Iterate through table make sure that values were not inserted.
@@ -192,18 +197,20 @@ TEST_F(TransactionTest, DISABLED_SimpleInsertRollbackTest) {
   SeqScanPlanNode scan_plan{out_schema, nullptr, table_info->oid_};
 
   std::vector<Tuple> result_set;
+  LOG_DEBUG("txn2 execute");
   GetExecutionEngine()->Execute(&scan_plan, &result_set, txn2, exec_ctx2.get());
 
   // Size
   ASSERT_EQ(result_set.size(), 0);
   std::vector<RID> rids;
 
+  LOG_DEBUG("txn commit");
   GetTxnManager()->Commit(txn2);
   delete txn2;
 }
 
 // NOLINTNEXTLINE
-TEST_F(TransactionTest, DISABLED_DirtyReadsTest) {
+TEST_F(TransactionTest, DirtyReadsTest) {
   // txn1: INSERT INTO empty_table2 VALUES (200, 20), (201, 21), (202, 22)
   // txn2: SELECT * FROM empty_table2;
   // txn1: abort

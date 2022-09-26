@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "common/logger.h"
 #include "execution/executors/insert_executor.h"
 
 namespace bustub {
@@ -35,30 +36,54 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   bool inserted = false;
   Tuple t;
   RID r;
+  Transaction *txn = exec_ctx_->GetTransaction();
 
   // insert to table
   if (plan_->IsRawInsert()) {
     if (pos_ < plan_->RawValues().size()) {  // valid position
       std::vector<Value> raw_value = plan_->RawValues()[pos_++];
       t = Tuple(raw_value, &table_info_->schema_);
-      inserted = table_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction());
+    } else {
+      return false;
     }
   } else {
-    if (child_executor_->Next(&t, &r)) {
-      inserted = table_info_->table_->InsertTuple(t, &r, exec_ctx_->GetTransaction());
+    if (!child_executor_->Next(&t, &r)) {
+      return false;
     }
   }
+
+  inserted = table_info_->table_->InsertTuple(t, &r, txn);
+
+  // locked here because if aborted, Unlock() will be called, and it expects RID is locked
+  Lock(r);
 
   // update index
   if (inserted && !index_infos_.empty()) {
     for (auto &it : index_infos_) {
       Tuple key;
       key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-      it->index_->InsertEntry(key, r, exec_ctx_->GetTransaction());
+      it->index_->InsertEntry(key, r, txn);
+
+      // When rollback, txn_mgr delete new_key, does not use old_key
+      IndexWriteRecord record(r, table_info_->oid_, WType::INSERT, t, Tuple{}, table_info_->oid_,
+                              exec_ctx_->GetCatalog());
+      txn->GetIndexWriteSet()->emplace_back(record);
     }
   }
 
   return inserted;
+}
+
+// the locking behavior on X-lock for all isolation level should be the same
+void InsertExecutor::Lock(const RID &rid) {
+  // LOG_DEBUG("InsertExec: Lock()");
+  Transaction *txn = exec_ctx_->GetTransaction();
+  exec_ctx_->GetLockManager()->LockExclusive(txn, rid);
+}
+
+// for 2PL, X-lock are released on commit/abort
+void InsertExecutor::Unlock(const RID &rid) {
+  // LOG_DEBUG("InsertExec: Unlock()");
 }
 
 }  // namespace bustub

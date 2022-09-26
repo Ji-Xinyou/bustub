@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "execution/executors/seq_scan_executor.h"
+#include "concurrency/transaction.h"
 
 namespace bustub {
 
@@ -33,19 +34,52 @@ void SeqScanExecutor::Init() {
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   while (current_ != end_) {
     TableIterator iter = current_++;
-    if (predicate_ == nullptr || predicate_->Evaluate(&(*iter), &table_info_->schema_).GetAs<bool>()) {
+    *rid = iter->GetRid();
+    Lock(*rid);
+    *tuple = *iter;
+    Unlock(*rid);
+
+    if (predicate_ == nullptr || predicate_->Evaluate(&(*tuple), &table_info_->schema_).GetAs<bool>()) {
       // generate tuple from output schema
       std::vector<Value> values;
-      *tuple = *iter;
       for (const auto &col : plan_->OutputSchema()->GetColumns()) {
         values.push_back(col.GetExpr()->Evaluate(tuple, &table_info_->schema_));
       }
       *tuple = Tuple(values, plan_->OutputSchema());
-      *rid = iter->GetRid();
       return true;
     }
   }
   return false;
+}
+
+// SeqScan is RDONLY, only requires a S-lock
+void SeqScanExecutor::Lock(const RID &rid) {
+  Transaction *txn = exec_ctx_->GetTransaction();
+  if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
+    return;
+  }
+  // make sure a txn only lock once
+  bool locked = txn->GetSharedLockSet()->find(rid) != txn->GetSharedLockSet()->end() ||
+                txn->GetExclusiveLockSet()->find(rid) != txn->GetExclusiveLockSet()->end();
+  if (locked) {
+    return;
+  }
+  exec_ctx_->GetLockManager()->LockShared(txn, rid);
+}
+
+void SeqScanExecutor::Unlock(const RID &rid) {
+  Transaction *txn = exec_ctx_->GetTransaction();
+  if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
+    return;
+  }
+  // READ_UNCOMMITED: No Shared Lock
+  // READ_COMMITED: Shared Lock unlocked manually
+  // REPEATABLE_READ && SERIALIZABLE: Unlocked on commit/abort
+  BUSTUB_ASSERT(txn->GetExclusiveLockSet()->find(rid) == txn->GetExclusiveLockSet()->end(),
+                "seq_scan: unlock a S-lock when X-lock is held");
+  if (txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
+    exec_ctx_->GetLockManager()->Unlock(txn, rid);
+  }
 }
 
 }  // namespace bustub

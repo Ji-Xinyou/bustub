@@ -38,19 +38,27 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   bool updated = false;
   Tuple t;
   RID r;
+  Transaction *txn = exec_ctx_->GetTransaction();
 
   if (child_executor_->Next(&t, &r)) {
+    Lock(r);
     // update table
     Tuple updated_tuple = GenerateUpdatedTuple(t);
-    updated = table_info_->table_->UpdateTuple(updated_tuple, r, exec_ctx_->GetTransaction());
+    updated = table_info_->table_->UpdateTuple(updated_tuple, r, txn);
+    Unlock(r);
 
     // update index
     if (updated && !index_infos_.empty()) {
       for (auto &it : index_infos_) {
         Tuple new_key = updated_tuple.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
         Tuple old_key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-        it->index_->DeleteEntry(old_key, r, exec_ctx_->GetTransaction());
-        it->index_->InsertEntry(new_key, r, exec_ctx_->GetTransaction());
+        it->index_->DeleteEntry(old_key, r, txn);
+        it->index_->InsertEntry(new_key, r, txn);
+
+        // When rollback, txn_mgr delete new_key, insert old_key
+        IndexWriteRecord record(r, table_info_->oid_, WType::UPDATE, updated_tuple, t, table_info_->oid_,
+                                exec_ctx_->GetCatalog());
+        txn->GetIndexWriteSet()->emplace_back(record);
       }
     }
   }
@@ -81,5 +89,13 @@ auto UpdateExecutor::GenerateUpdatedTuple(const Tuple &src_tuple) -> Tuple {
   }
   return Tuple{values, &schema};
 }
+
+void UpdateExecutor::Lock(const RID &rid) {
+  Transaction *txn = exec_ctx_->GetTransaction();
+  exec_ctx_->GetLockManager()->LockExclusive(txn, rid);
+}
+
+// 2PL unlocks when commit/abort
+void UpdateExecutor::Unlock(const RID &rid) {}
 
 }  // namespace bustub

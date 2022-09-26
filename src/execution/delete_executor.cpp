@@ -34,20 +34,37 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   bool deleted = false;
   Tuple t;
   RID r;
+  Transaction *txn = exec_ctx_->GetTransaction();
+
   if (child_executor_->Next(&t, &r)) {
     // update table
-    deleted = table_info_->table_->MarkDelete(r, exec_ctx_->GetTransaction());
+    Lock(r);
+    deleted = table_info_->table_->MarkDelete(r, txn);
+    Unlock(r);
   }
 
   if (deleted && !index_infos_.empty()) {
     // update index
     for (auto &it : index_infos_) {
       Tuple key = t.KeyFromTuple(table_info_->schema_, it->key_schema_, it->index_->GetKeyAttrs());
-      it->index_->DeleteEntry(key, r, exec_ctx_->GetTransaction());
+      it->index_->DeleteEntry(key, r, txn);
+
+      // When rollback, txn_mgr insert t, does not use old_tuple
+      IndexWriteRecord record(r, table_info_->oid_, WType::DELETE, t, Tuple{}, table_info_->oid_,
+                              exec_ctx_->GetCatalog());
+      txn->GetIndexWriteSet()->emplace_back(record);
     }
   }
 
   return deleted;
 }
+
+void DeleteExecutor::Lock(const RID &rid) {
+  Transaction *txn = exec_ctx_->GetTransaction();
+  exec_ctx_->GetLockManager()->LockExclusive(txn, rid);
+}
+
+// 2PL unlocks when commit/abort
+void DeleteExecutor::Unlock(const RID &rid) {}
 
 }  // namespace bustub

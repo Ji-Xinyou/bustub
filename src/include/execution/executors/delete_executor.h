@@ -55,6 +55,9 @@ class DeleteExecutor : public AbstractExecutor {
   /** @return The output schema for the delete */
   auto GetOutputSchema() -> const Schema * override { return plan_->OutputSchema(); };
 
+  void Lock(const RID &rid);
+  void Unlock(const RID &rid);
+
  private:
   /** The delete plan node to be executed */
   const DeletePlanNode *plan_;

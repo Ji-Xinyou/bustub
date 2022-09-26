@@ -46,10 +46,6 @@ class LockManager {
 
   class LockRequestQueue {
    public:
-    LockRequestQueue() = default;
-
-    ~LockRequestQueue() = default;
-
     std::list<LockRequest> request_queue_;
     // for notifying blocked transactions on this rid
     std::condition_variable cv_{};
@@ -163,11 +159,11 @@ class LockManager {
   void TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q);
 
   /**
-   * Deadlock prevention, called only when you are sure that the transaction will be waiting 
+   * Deadlock prevention, called only when you are sure that the transaction will be waiting
    * @param txn the transaction TRYING to hold the lock
    * @param q the request queue corresponding to the RID(shipped w/ transaction in the parameter)
    */
-  void WoundWait(Transaction *txn, LockRequestQueue *q);
+  void WoundWait(Transaction *txn, LockRequestQueue *q, bool shared);
 
   /**
    * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
@@ -184,7 +180,7 @@ class LockManager {
   std::unordered_map<RID, LockRequestQueue> lock_table_;
 
   /** Transaction tablefor WoundWait */
-  std::unordered_map<txn_id_t, Transaction*> txn_table_;
+  std::unordered_map<txn_id_t, Transaction *> txn_table_;
 };
 
 }  // namespace bustub

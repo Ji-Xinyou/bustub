@@ -47,6 +47,12 @@ class SeqScanExecutor : public AbstractExecutor {
   /** @return The output schema for the sequential scan */
   auto GetOutputSchema() -> const Schema * override { return plan_->OutputSchema(); }
 
+  /** Holds the share lock on a tuple */
+  void Lock(const RID &rid);
+
+  /** Unlock the share lock on a tuple */
+  void Unlock(const RID &rid);
+
  private:
   /** The sequential scan plan node to be executed */
   const SeqScanPlanNode *plan_;
