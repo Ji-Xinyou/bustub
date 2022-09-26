@@ -77,7 +77,7 @@ void BasicTest1() {
     delete txns[i];
   }
 }
-TEST(LockManagerTest, DISABLED_BasicTest) { BasicTest1(); }
+TEST(LockManagerTest, BasicTest) { BasicTest1(); }
 
 void TwoPLTest() {
   LockManager lock_mgr{};
@@ -123,34 +123,38 @@ void TwoPLTest() {
 
   delete txn;
 }
-TEST(LockManagerTest, DISABLED_TwoPLTest) { TwoPLTest(); }
+TEST(LockManagerTest, TwoPLTest) { TwoPLTest(); }
 
 void UpgradeTest() {
-  LockManager lock_mgr{};
-  TransactionManager txn_mgr{&lock_mgr};
-  RID rid{0, 0};
-  Transaction txn(0);
-  txn_mgr.Begin(&txn);
+  try {
+    LockManager lock_mgr{};
+    TransactionManager txn_mgr{&lock_mgr};
+    RID rid{0, 0};
+    Transaction txn(0);
+    txn_mgr.Begin(&txn);
 
-  bool res = lock_mgr.LockShared(&txn, rid);
-  EXPECT_TRUE(res);
-  CheckTxnLockSize(&txn, 1, 0);
-  CheckGrowing(&txn);
+    bool res = lock_mgr.LockShared(&txn, rid);
+    EXPECT_TRUE(res);
+    CheckTxnLockSize(&txn, 1, 0);
+    CheckGrowing(&txn);
 
-  res = lock_mgr.LockUpgrade(&txn, rid);
-  EXPECT_TRUE(res);
-  CheckTxnLockSize(&txn, 0, 1);
-  CheckGrowing(&txn);
+    res = lock_mgr.LockUpgrade(&txn, rid);
+    EXPECT_TRUE(res);
+    CheckTxnLockSize(&txn, 0, 1);
+    CheckGrowing(&txn);
 
-  res = lock_mgr.Unlock(&txn, rid);
-  EXPECT_TRUE(res);
-  CheckTxnLockSize(&txn, 0, 0);
-  CheckShrinking(&txn);
+    res = lock_mgr.Unlock(&txn, rid);
+    EXPECT_TRUE(res);
+    CheckTxnLockSize(&txn, 0, 0);
+    CheckShrinking(&txn);
 
-  txn_mgr.Commit(&txn);
-  CheckCommitted(&txn);
+    txn_mgr.Commit(&txn);
+    CheckCommitted(&txn);
+  } catch (TransactionAbortException &e) {
+    std::cout << e.GetInfo() << std::endl;
+  }
 }
-TEST(LockManagerTest, DISABLED_UpgradeLockTest) { UpgradeTest(); }
+TEST(LockManagerTest, UpgradeLockTest) { UpgradeTest(); }
 
 void WoundWaitBasicTest() {
   LockManager lock_mgr{};
@@ -202,6 +206,6 @@ void WoundWaitBasicTest() {
   txn_mgr.Commit(&txn_hold);
   CheckCommitted(&txn_hold);
 }
-TEST(LockManagerTest, DISABLED_WoundWaitBasicTest) { WoundWaitBasicTest(); }
+TEST(LockManagerTest, WoundWaitBasicTest) { WoundWaitBasicTest(); }
 
 }  // namespace bustub

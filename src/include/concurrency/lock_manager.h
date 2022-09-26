@@ -46,11 +46,19 @@ class LockManager {
 
   class LockRequestQueue {
    public:
+    LockRequestQueue() = default;
+
+    ~LockRequestQueue() = default;
+
     std::list<LockRequest> request_queue_;
     // for notifying blocked transactions on this rid
-    std::condition_variable cv_;
+    std::condition_variable cv_{};
     // txn_id of an upgrading transaction (if any)
     txn_id_t upgrading_ = INVALID_TXN_ID;
+    // the # of txn holding S-lock
+    size_t nsharing_;
+    // if there is a txn holding X-lock
+    bool is_exclusive_;
   };
 
  public:
@@ -104,10 +112,59 @@ class LockManager {
    */
   auto Unlock(Transaction *txn, const RID &rid) -> bool;
 
- private:
+  /**
+   * FOR SHARED LOCK
+   * Returns whether the transaction can stop waiting on the queue
+   *
+   * @param txn the transaction waiting on the lock?
+   * @param q the q that the rid(shipped with txn) corresponds
+   * @return true if the txn can stop waiting, false otherwise
+   */
+  auto SharedStopWait(Transaction *txn, LockRequestQueue *q) -> bool;
+
+  /**
+   * FOR EXCLUSIVE LOCK
+   * Returns whether the transaction can stop waiting on the queue
+   *
+   * @param txn the transaction waiting on the lock?
+   * @param q the q that the rid(shipped with txn) corresponds
+   * @return true if the txn can stop waiting, false otherwise
+   */
+  auto ExclusiveStopWait(Transaction *txn, LockRequestQueue *q) -> bool;
+
+  auto UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool;
+
+  /**
+   * Returns the iterator corresponds to the txn_id
+   * @param txn the transaction to query
+   * @param q the queue where request resides
+   * @return the iterator of the txn's query, if not exist, return q.end()
+   */
+  auto TxnToIter(Transaction *txn, LockRequestQueue *q) -> std::list<LockRequest>::iterator;
+
+  /**
+   * Aborts and throw an error if the transaction is in shrink state
+   * Also check
+   *
+   * @param txn
+   * @param rid
+   */
+  void TryAbortOnShrink(Transaction *txn);
+
+  void TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q);
+
+  /**
+   * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
+   * If not the FIRST time, we do nothing
+   *
+   * @param txn
+   * @param rid
+   */
+  void TryInitLockQueue(const RID &rid);
+
   std::mutex latch_;
 
-  /** Lock table for lock requests. */
+  /** Lock table for lock requests, the queue is per-RID */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
 };
 
