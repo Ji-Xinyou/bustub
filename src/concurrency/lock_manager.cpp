@@ -49,10 +49,13 @@ auto LockManager::LockShared(Transaction *txn, const RID &rid) -> bool {
   TryAbortOnShrink(txn);
   TryInitLockQueue(rid);
 
+  txn_table_[txn->GetTransactionId()] = txn;
+
   LockRequestQueue *q = &lock_table_.find(rid)->second;
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::SHARED);
 
   if (q->is_exclusive_) {
+    WoundWait(txn, q);
     q->cv_.wait(lk, [txn, q, this] { return SharedStopWait(txn, q); });
   }
   TryAbortOnDeadlock(txn, q);
@@ -73,10 +76,13 @@ auto LockManager::LockExclusive(Transaction *txn, const RID &rid) -> bool {
   TryAbortOnShrink(txn);
   TryInitLockQueue(rid);
 
+  txn_table_[txn->GetTransactionId()] = txn;
+
   LockRequestQueue *q = &lock_table_.find(rid)->second;
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
 
   if (q->is_exclusive_ || q->nsharing_ != 0) {
+    WoundWait(txn, q);
     q->cv_.wait(lk, [txn, q, this] { return ExclusiveStopWait(txn, q); });
   }
   TryAbortOnDeadlock(txn, q);
@@ -102,6 +108,8 @@ auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
     throw TransactionAbortException(txn->GetTransactionId(), AbortReason::UPGRADE_CONFLICT);
   }
 
+  txn_table_[txn->GetTransactionId()] = txn;
+
   // emplace the request
   txn->GetSharedLockSet()->erase(rid);
   auto iter = TxnToIter(txn, q);
@@ -114,6 +122,7 @@ auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
   q->upgrading_ = txn->GetTransactionId();
 
   if (q->is_exclusive_ || q->nsharing_ != 0) {
+    WoundWait(txn, q);
     q->cv_.wait(lk, [this, txn, q] { return UpgradeStopWait(txn, q); });
   }
   TryAbortOnDeadlock(txn, q);
@@ -203,7 +212,7 @@ void LockManager::TryAbortOnShrink(Transaction *txn) {
   }
 }
 
-// on deadlock, the deadlock detection checks for cycles, and set victim transactions to abort state
+// on deadlock, the deadlock prevention checks for cycles, and set victim transactions to abort state
 // therefore, after the cond.wait(), the txn may be aborted due to deadlock, we check for this
 void LockManager::TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q) {
   if (txn->GetState() == TransactionState::ABORTED) {
@@ -230,6 +239,34 @@ auto LockManager::ExclusiveStopWait(Transaction *txn, LockRequestQueue *q) -> bo
 
 auto LockManager::UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool {
   return (txn->GetState() == TransactionState::ABORTED) || ((!q->is_exclusive_) && (q->nsharing_ == 0));
+}
+
+//! CALL THIS FUNCTION WHEN YOU ARE SURE THAT THE TXN WILL BE BLOCKED
+// For all the transactions in the [q], since we are going to wait on the lock
+// If there exists transactions with a lower txn_id than [txn], set it to aborted
+void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q) {
+  bool notify = false;
+  for (auto it = q->request_queue_.begin(); it != q->request_queue_.end(); it++) {
+    if (it->granted_ && it->txn_id_ > txn->GetTransactionId()) {
+      txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
+
+      // FIXME: the handling of abortion may be held in txn::abort() followed by unlock()
+      // if (it->lock_mode_ == LockMode::SHARED) {
+      //   q->nsharing_--;
+      // } else {
+      //   q->is_exclusive_ = false;
+      // }
+
+      // if this txn is upgrading
+      if (it->txn_id_ == q->upgrading_) {
+        q->upgrading_ = INVALID_TXN_ID;
+      }
+      notify = true;
+    }
+  }
+  if (notify) {
+    q->cv_.notify_all();
+  }
 }
 
 }  // namespace bustub

@@ -6,6 +6,7 @@
 #include <thread>  // NOLINT
 
 #include "common/config.h"
+#include "common/logger.h"
 #include "concurrency/lock_manager.h"
 #include "concurrency/transaction_manager.h"
 #include "gtest/gtest.h"

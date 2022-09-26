@@ -125,13 +125,19 @@ class LockManager {
   /**
    * FOR EXCLUSIVE LOCK
    * Returns whether the transaction can stop waiting on the queue
-   *
    * @param txn the transaction waiting on the lock?
    * @param q the q that the rid(shipped with txn) corresponds
    * @return true if the txn can stop waiting, false otherwise
    */
   auto ExclusiveStopWait(Transaction *txn, LockRequestQueue *q) -> bool;
 
+  /**
+   * FOR UPGRADING LOCK
+   * Returns whether the transaction can stop waiting on the queue
+   * @param txn the transaction waiting on the lock
+   * @param q the q that the rid(shipped with txn) corresponds
+   * @return true if txn can stop waiting, false otherwise
+   */
   auto UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool;
 
   /**
@@ -145,13 +151,23 @@ class LockManager {
   /**
    * Aborts and throw an error if the transaction is in shrink state
    * Also check
-   *
-   * @param txn
-   * @param rid
+   * @param txn the transaction we are testing
    */
   void TryAbortOnShrink(Transaction *txn);
 
+  /**
+   * If the txn is set to aborted due to deadlock, we abort it and throw an error
+   * @param txn the transaction we are testing
+   * @param q the request queue corresponding to the RID(shipped w/ transaction in the parameter)
+   */
   void TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q);
+
+  /**
+   * Deadlock prevention, called only when you are sure that the transaction will be waiting 
+   * @param txn the transaction TRYING to hold the lock
+   * @param q the request queue corresponding to the RID(shipped w/ transaction in the parameter)
+   */
+  void WoundWait(Transaction *txn, LockRequestQueue *q);
 
   /**
    * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
@@ -166,6 +182,9 @@ class LockManager {
 
   /** Lock table for lock requests, the queue is per-RID */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
+
+  /** Transaction tablefor WoundWait */
+  std::unordered_map<txn_id_t, Transaction*> txn_table_;
 };
 
 }  // namespace bustub
