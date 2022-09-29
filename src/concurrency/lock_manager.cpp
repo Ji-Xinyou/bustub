@@ -247,6 +247,7 @@ auto LockManager::UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool
 // For all the transactions in the [q], since we are going to wait on the lock
 // If there exists transactions with a lower txn_id than [txn], set it to aborted
 void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, bool shared) {
+  LOG_DEBUG("txn %d called wound wait", txn->GetTransactionId());
   bool notify = false;
   for (auto it = q->request_queue_.begin(); it != q->request_queue_.end(); it++) {
     if (it->granted_ && it->txn_id_ > txn->GetTransactionId()) {
@@ -256,6 +257,7 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, bool shared) 
             // an exclusive lock is waiting, abort the S-lock
             txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
             q->nsharing_--;
+            notify = true;
           }
           break;
         }
@@ -265,22 +267,28 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, bool shared) 
           // if an X-lock is waiting, this X-lock should also abort
           txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
           q->is_exclusive_ = false;
+          notify = true;
           break;
         }
 
-        default: BUSTUB_ASSERT(false, "UNREACHABLE");
+        default:
+          BUSTUB_ASSERT(false, "UNREACHABLE");
       }
+    }
 
-      // if this txn is upgrading
-      if (it->txn_id_ == q->upgrading_) {
-        q->upgrading_ = INVALID_TXN_ID;
-      }
+    // handle upgrading case
+    if ((it->txn_id_ > txn->GetTransactionId()) && (q->upgrading_ == it->txn_id_)) {
+      LOG_DEBUG("Aborting txn %d", it->txn_id_);
+      q->upgrading_ = INVALID_TXN_ID;
+      txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
       notify = true;
     }
   }
+
   if (notify) {
     q->cv_.notify_all();
   }
+  LOG_DEBUG("txn %d ended wound wait", txn->GetTransactionId());
 }
 
 }  // namespace bustub
