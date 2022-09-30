@@ -55,10 +55,12 @@ auto LockManager::LockShared(Transaction *txn, const RID &rid) -> bool {
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::SHARED);
 
   if (q->is_exclusive_) {
-    WoundWait(txn, q, true);
+    WoundWait(txn, q);
     q->cv_.wait(lk, [txn, q, this] { return SharedStopWait(txn, q); });
   }
-  TryAbortOnDeadlock(txn, q);
+  if (TryAbortOnDeadlock(txn, q) == false) {
+    return false;
+  }
 
   // now we can grant the S-lock
   txn->GetSharedLockSet()->emplace(rid);
@@ -82,10 +84,13 @@ auto LockManager::LockExclusive(Transaction *txn, const RID &rid) -> bool {
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
 
   if (q->is_exclusive_ || q->nsharing_ != 0) {
-    WoundWait(txn, q, false);
+    WoundWait(txn, q);
     q->cv_.wait(lk, [txn, q, this] { return ExclusiveStopWait(txn, q); });
   }
-  TryAbortOnDeadlock(txn, q);
+
+  if (TryAbortOnDeadlock(txn, q) == false) {
+    return false;
+  }
 
   // now we can grant the X-lock
   txn->GetExclusiveLockSet()->emplace(rid);
@@ -122,10 +127,13 @@ auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
   q->upgrading_ = txn->GetTransactionId();
 
   if (q->is_exclusive_ || q->nsharing_ != 0) {
-    WoundWait(txn, q, false);
+    WoundWait(txn, q);
     q->cv_.wait(lk, [this, txn, q] { return UpgradeStopWait(txn, q); });
   }
-  TryAbortOnDeadlock(txn, q);
+
+  if (TryAbortOnDeadlock(txn, q) == false) {
+    return false;
+  }
 
   // now we can grant the request
   txn->GetExclusiveLockSet()->emplace(rid);
@@ -216,12 +224,14 @@ void LockManager::TryAbortOnShrink(Transaction *txn) {
 
 // on deadlock, the deadlock prevention checks for cycles, and set victim transactions to abort state
 // therefore, after the cond.wait(), the txn may be aborted due to deadlock, we check for this
-void LockManager::TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q) {
+bool LockManager::TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q) {
   if (txn->GetState() == TransactionState::ABORTED) {
     auto iter = TxnToIter(txn, q);
     q->request_queue_.erase(iter);
-    throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
+    return false;
+    // throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
   }
+  return true;
 }
 
 void LockManager::TryInitLockQueue(const RID &rid) {
@@ -246,39 +256,33 @@ auto LockManager::UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool
 //! CALL THIS FUNCTION WHEN YOU ARE SURE THAT THE TXN WILL BE BLOCKED
 // For all the transactions in the [q], since we are going to wait on the lock
 // If there exists transactions with a lower txn_id than [txn], set it to aborted
-void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, bool shared) {
+void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q) {
   LOG_DEBUG("txn %d called wound wait", txn->GetTransactionId());
   bool notify = false;
   for (auto it = q->request_queue_.begin(); it != q->request_queue_.end(); it++) {
-    if (it->granted_ && it->txn_id_ > txn->GetTransactionId()) {
+    // FIXME: use it->granted_;
+    if (it->txn_id_ > txn->GetTransactionId()) {
       switch (it->lock_mode_) {
         case LockMode::SHARED: {
-          if (!shared) {
-            // an exclusive lock is waiting, abort the S-lock
-            txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
-            q->nsharing_--;
-            notify = true;
-          }
+          txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
+          q->nsharing_--;
           break;
         }
 
         case LockMode::EXCLUSIVE: {
-          // if a S-lock is waiting, this X-lock should abort
-          // if an X-lock is waiting, this X-lock should also abort
           txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
           q->is_exclusive_ = false;
-          notify = true;
           break;
         }
 
         default:
           BUSTUB_ASSERT(false, "UNREACHABLE");
       }
+      notify = true;
     }
 
     // handle upgrading case
     if ((it->txn_id_ > txn->GetTransactionId()) && (q->upgrading_ == it->txn_id_)) {
-      LOG_DEBUG("Aborting txn %d", it->txn_id_);
       q->upgrading_ = INVALID_TXN_ID;
       txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
       notify = true;

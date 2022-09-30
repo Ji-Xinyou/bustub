@@ -156,14 +156,14 @@ class LockManager {
    * @param txn the transaction we are testing
    * @param q the request queue corresponding to the RID(shipped w/ transaction in the parameter)
    */
-  void TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q);
+  bool TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q);
 
   /**
    * Deadlock prevention, called only when you are sure that the transaction will be waiting
    * @param txn the transaction TRYING to hold the lock
    * @param q the request queue corresponding to the RID(shipped w/ transaction in the parameter)
    */
-  void WoundWait(Transaction *txn, LockRequestQueue *q, bool shared);
+  void WoundWait(Transaction *txn, LockRequestQueue *q);
 
   /**
    * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
