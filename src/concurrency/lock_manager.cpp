@@ -14,6 +14,7 @@
 
 #include <utility>
 #include <vector>
+#include "concurrency/transaction_manager.h"
 
 /**
  * ======== FOR DIFFERENT LEVEL OF ISOLATION ========
@@ -39,106 +40,115 @@ namespace bustub {
 
 auto LockManager::LockShared(Transaction *txn, const RID &rid) -> bool {
   std::unique_lock<std::mutex> lk(latch_);
+  LOG_DEBUG("txn %d LockShared(), on RID %s", txn->GetTransactionId(), rid.ToString().c_str());
 
   // refuse READ_UNCOMMITTED, since there is no share lock at all, throw an error
   if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
     txn->SetState(TransactionState::ABORTED);
     throw TransactionAbortException(txn->GetTransactionId(), AbortReason::LOCKSHARED_ON_READ_UNCOMMITTED);
   }
+  if (txn->GetState() == TransactionState::ABORTED) {
+    return false;
+  }
 
   TryAbortOnShrink(txn);
   TryInitLockQueue(rid);
+  txn->GetSharedLockSet()->emplace(rid);
 
-  txn_table_[txn->GetTransactionId()] = txn;
-
-  LockRequestQueue *q = &lock_table_.find(rid)->second;
+  LockRequestQueue *q = &lock_table_[rid];
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::SHARED);
 
   if (q->is_exclusive_) {
-    WoundWait(txn, q);
+    LOG_DEBUG("txn %d try to wait", txn->GetTransactionId());
+    WoundWait(txn, q, LockMode::SHARED);
     q->cv_.wait(lk, [txn, q, this] { return SharedStopWait(txn, q); });
   }
-  if (TryAbortOnDeadlock(txn, q) == false) {
+  if (!TryAbortOnDeadlock(txn, q)) {
+    LOG_DEBUG("txn %d aborted due to deadlock", txn->GetTransactionId());
     return false;
   }
 
   // now we can grant the S-lock
-  txn->GetSharedLockSet()->emplace(rid);
+  LOG_DEBUG("txn %d granted S-lock on rid %s", txn->GetTransactionId(), rid.ToString().c_str());
   TxnToIter(txn, q)->granted_ = true;
   q->nsharing_++;
-
-  BUSTUB_ASSERT(q->is_exclusive_ == false, "Expect no writer when a reader comes in");
 
   return true;
 }
 
 auto LockManager::LockExclusive(Transaction *txn, const RID &rid) -> bool {
   std::unique_lock<std::mutex> lk(latch_);
+  LOG_DEBUG("txn %d LockExclusive(), on RID %s", txn->GetTransactionId(), rid.ToString().c_str());
 
   TryAbortOnShrink(txn);
   TryInitLockQueue(rid);
+  txn->GetExclusiveLockSet()->emplace(rid);
 
-  txn_table_[txn->GetTransactionId()] = txn;
-
-  LockRequestQueue *q = &lock_table_.find(rid)->second;
+  LockRequestQueue *q = &lock_table_[rid];
   q->request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
 
   if (q->is_exclusive_ || q->nsharing_ != 0) {
-    WoundWait(txn, q);
+    LOG_DEBUG("txn %d try to wait", txn->GetTransactionId());
+    WoundWait(txn, q, LockMode::EXCLUSIVE);
     q->cv_.wait(lk, [txn, q, this] { return ExclusiveStopWait(txn, q); });
   }
 
-  if (TryAbortOnDeadlock(txn, q) == false) {
+  if (!TryAbortOnDeadlock(txn, q)) {
+    LOG_DEBUG("txn %d aborted due to deadlock", txn->GetTransactionId());
     return false;
   }
 
   // now we can grant the X-lock
-  txn->GetExclusiveLockSet()->emplace(rid);
+  LOG_DEBUG("txn %d granted X-lock on rid %s", txn->GetTransactionId(), rid.ToString().c_str());
   TxnToIter(txn, q)->granted_ = true;
   q->is_exclusive_ = true;
-
-  BUSTUB_ASSERT(q->nsharing_ == 0, "Expect no sharing when a writer comes in");
 
   return true;
 }
 
 auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
   std::unique_lock<std::mutex> lk(latch_);
+  LOG_DEBUG("txn %d LockUpgrade on rid %s", txn->GetTransactionId(), rid.ToString().c_str());
 
   TryAbortOnShrink(txn);
+  if (txn->GetState() == TransactionState::ABORTED) {
+    return false;
+  }
+  if (lock_table_.find(rid) == lock_table_.end()) {
+    return false;
+  }
 
-  LockRequestQueue *q = &lock_table_.find(rid)->second;
+  LockRequestQueue *q = &lock_table_[rid];
   if (q->upgrading_ != INVALID_TXN_ID) {
     txn->SetState(TransactionState::ABORTED);
     throw TransactionAbortException(txn->GetTransactionId(), AbortReason::UPGRADE_CONFLICT);
   }
-
-  txn_table_[txn->GetTransactionId()] = txn;
-
-  // emplace the request
-  txn->GetSharedLockSet()->erase(rid);
   auto iter = TxnToIter(txn, q);
-  BUSTUB_ASSERT(iter->txn_id_ == txn->GetTransactionId(), "transaction id must holds");
-  BUSTUB_ASSERT(iter->lock_mode_ == LockMode::SHARED, "only shared can be upgraded");
+  if (iter == q->request_queue_.end() || !iter->granted_ || iter->lock_mode_ != LockMode::SHARED) {
+    return false;
+  }
+
   iter->granted_ = false;
   iter->lock_mode_ = LockMode::EXCLUSIVE;
-
   q->nsharing_--;
   q->upgrading_ = txn->GetTransactionId();
 
+  txn->GetSharedLockSet()->erase(rid);
+  txn->GetExclusiveLockSet()->emplace(rid);
+
   if (q->is_exclusive_ || q->nsharing_ != 0) {
-    WoundWait(txn, q);
+    LOG_DEBUG("txn %d try to wait", txn->GetTransactionId());
+    WoundWait(txn, q, LockMode::EXCLUSIVE);
     q->cv_.wait(lk, [this, txn, q] { return UpgradeStopWait(txn, q); });
   }
 
-  if (TryAbortOnDeadlock(txn, q) == false) {
+  if (!TryAbortOnDeadlock(txn, q)) {
+    LOG_DEBUG("txn %d aborted due to deadlock", txn->GetTransactionId());
     return false;
   }
 
   // now we can grant the request
-  txn->GetExclusiveLockSet()->emplace(rid);
-  BUSTUB_ASSERT(q->is_exclusive_ == false, "Invariant: upgrade when no writer");
-  BUSTUB_ASSERT(q->upgrading_ != INVALID_TXN_ID, "Invariant: upgrading set when upgrade");
+  LOG_DEBUG("txn %d upgraded the lock on rid %s", txn->GetTransactionId(), rid.ToString().c_str());
   q->is_exclusive_ = true;
   q->upgrading_ = INVALID_TXN_ID;
   TxnToIter(txn, q)->granted_ = true;
@@ -148,17 +158,20 @@ auto LockManager::LockUpgrade(Transaction *txn, const RID &rid) -> bool {
 
 auto LockManager::Unlock(Transaction *txn, const RID &rid) -> bool {
   std::unique_lock<std::mutex> lk(latch_);
+  LOG_DEBUG("txn %d Unlock() on %s", txn->GetTransactionId(), rid.ToString().c_str());
 
-  LockRequestQueue *q = &lock_table_.find(rid)->second;
+  LockRequestQueue *q = &lock_table_[rid];
 
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->erase(rid);
 
   // look for the txn's request inside the q
   auto iter = TxnToIter(txn, q);
+  if (iter == q->request_queue_.end()) {
+    LOG_DEBUG("return false");
+    return false;
+  }
   LockMode mode = iter->lock_mode_;
-  BUSTUB_ASSERT(iter->granted_ == true, "Cannot unlock ungranted lock");
-  BUSTUB_ASSERT(iter->txn_id_ == txn->GetTransactionId(), "txn id must be consistent");
   q->request_queue_.erase(iter);
 
   // If a shared lock is released in READ_COMMITED state, it means nothing
@@ -166,35 +179,24 @@ auto LockManager::Unlock(Transaction *txn, const RID &rid) -> bool {
   bool relse_slock_on_read_commited =
       (mode == LockMode::SHARED) && (txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED);
   if ((txn->GetState() == TransactionState::GROWING) && !(relse_slock_on_read_commited)) {
+    LOG_DEBUG("txn %d GROWING -> SHRINKING", txn->GetTransactionId());
     txn->SetState(TransactionState::SHRINKING);
   }
 
   // now the lock is logically unlocked, we can notify the threads waiting on the lock now
   if (txn->GetState() != TransactionState::ABORTED) {
-    switch (mode) {
-      case LockMode::SHARED: {
-        BUSTUB_ASSERT(q->nsharing_ > 0, "Unlocking a shared lock with no sharing txn");
-        BUSTUB_ASSERT(q->is_exclusive_ == false, "When unlocking shared lock, no writer");
-        q->nsharing_--;
-        if (q->nsharing_ == 0) {
-          q->cv_.notify_all();
-        }
-        break;
-      }
-
-      case LockMode::EXCLUSIVE: {
-        BUSTUB_ASSERT(q->nsharing_ == 0, "Unlocking a X-lock should have no reader");
-        BUSTUB_ASSERT(q->is_exclusive_, "Unlocking X-lock without is_exclusive_ set");
-        q->is_exclusive_ = false;
+    if (mode == LockMode::SHARED) {
+      q->nsharing_--;
+      if (q->nsharing_ == 0) {
         q->cv_.notify_all();
-        break;
       }
-
-      default:
-        BUSTUB_ASSERT(false, "UNREACHABLE");
+    } else {
+      LOG_DEBUG("txn %d unlock on %s, cause is_exclusive to false", txn->GetTransactionId(), rid.ToString().c_str());
+      q->is_exclusive_ = false;
+      q->cv_.notify_all();
     }
   }
-
+  LOG_DEBUG("txn %d Unlock() Done on %s", txn->GetTransactionId(), rid.ToString().c_str());
   return true;
 }
 
@@ -227,7 +229,8 @@ void LockManager::TryAbortOnShrink(Transaction *txn) {
 bool LockManager::TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q) {
   if (txn->GetState() == TransactionState::ABORTED) {
     auto iter = TxnToIter(txn, q);
-    q->request_queue_.erase(iter);
+    iter->granted_ = false;
+    q->cv_.notify_all();
     return false;
     // throw TransactionAbortException(txn->GetTransactionId(), AbortReason::DEADLOCK);
   }
@@ -246,6 +249,7 @@ auto LockManager::SharedStopWait(Transaction *txn, LockRequestQueue *q) -> bool 
 }
 
 auto LockManager::ExclusiveStopWait(Transaction *txn, LockRequestQueue *q) -> bool {
+  LOG_DEBUG("q->is_exclusive_ = %d, q->n_sharing_ = %zu", q->is_exclusive_, q->nsharing_);
   return (txn->GetState() == TransactionState::ABORTED) || ((!q->is_exclusive_) && (q->nsharing_ == 0));
 }
 
@@ -253,46 +257,41 @@ auto LockManager::UpgradeStopWait(Transaction *txn, LockRequestQueue *q) -> bool
   return (txn->GetState() == TransactionState::ABORTED) || ((!q->is_exclusive_) && (q->nsharing_ == 0));
 }
 
-//! CALL THIS FUNCTION WHEN YOU ARE SURE THAT THE TXN WILL BE BLOCKED
-// For all the transactions in the [q], since we are going to wait on the lock
-// If there exists transactions with a lower txn_id than [txn], set it to aborted
-void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q) {
-  LOG_DEBUG("txn %d called wound wait", txn->GetTransactionId());
-  bool notify = false;
+void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into) {
   for (auto it = q->request_queue_.begin(); it != q->request_queue_.end(); it++) {
-    // FIXME: use it->granted_;
     if (it->txn_id_ > txn->GetTransactionId()) {
-      switch (it->lock_mode_) {
-        case LockMode::SHARED: {
-          txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
-          q->nsharing_--;
-          break;
-        }
+      // if the one holding an X-lock, it has to be aborted
+      //   - but if it is upgrading, we cannot set is_exclusive to false，since it is not granted
+      // if the one is S-lock, if into is X-lock, it has to be aborted
+      // if the aborted is the upgrading one, abort that
 
-        case LockMode::EXCLUSIVE: {
-          txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
+      if (it->lock_mode_ == LockMode::EXCLUSIVE && it->txn_id_ != q->upgrading_) {
+        LOG_DEBUG("aborting txn %d, setting is_exclusive to false", it->txn_id_);
+        if (it->granted_) {
           q->is_exclusive_ = false;
-          break;
         }
-
-        default:
-          BUSTUB_ASSERT(false, "UNREACHABLE");
+        it->granted_ = false;
+        TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+        q->cv_.notify_all();
+      } else if (it->lock_mode_ == LockMode::SHARED) {  // S-lock
+        if (into == LockMode::EXCLUSIVE) {              // X-lock want to holds, meeting S-lock
+          LOG_DEBUG("aborting txn %d, n_sharing: %zu -> %zu", it->txn_id_, q->nsharing_, q->nsharing_ - 1);
+          if (it->granted_) {
+            q->nsharing_--;
+          }
+          it->granted_ = false;
+          TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+          q->cv_.notify_all();
+        }
       }
-      notify = true;
-    }
-
-    // handle upgrading case
-    if ((it->txn_id_ > txn->GetTransactionId()) && (q->upgrading_ == it->txn_id_)) {
-      q->upgrading_ = INVALID_TXN_ID;
-      txn_table_[it->txn_id_]->SetState(TransactionState::ABORTED);
-      notify = true;
+      if (q->upgrading_ == it->txn_id_) {
+        LOG_DEBUG("aborting txn %d, upgrade aborted", it->txn_id_);
+        q->upgrading_ = INVALID_TXN_ID;
+        TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+        q->cv_.notify_all();
+      }
     }
   }
-
-  if (notify) {
-    q->cv_.notify_all();
-  }
-  LOG_DEBUG("txn %d ended wound wait", txn->GetTransactionId());
 }
 
 }  // namespace bustub

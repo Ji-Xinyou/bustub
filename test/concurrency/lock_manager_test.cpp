@@ -78,7 +78,7 @@ void BasicTest1() {
     delete txns[i];
   }
 }
-// TEST(LockManagerTest, BasicTest) { BasicTest1(); }
+TEST(LockManagerTest, BasicTest) { BasicTest1(); }
 
 void TwoPLTest() {
   LockManager lock_mgr{};
@@ -124,7 +124,7 @@ void TwoPLTest() {
 
   delete txn;
 }
-// TEST(LockManagerTest, TwoPLTest) { TwoPLTest(); }
+TEST(LockManagerTest, TwoPLTest) { TwoPLTest(); }
 
 void UpgradeTest() {
   try {
@@ -155,7 +155,7 @@ void UpgradeTest() {
     std::cout << e.GetInfo() << std::endl;
   }
 }
-// TEST(LockManagerTest, UpgradeLockTest) { UpgradeTest(); }
+TEST(LockManagerTest, UpgradeLockTest) { UpgradeTest(); }
 
 void WoundWaitBasicTest() {
   LockManager lock_mgr{};
@@ -229,56 +229,57 @@ void WoundUpgradeTest() {
   auto upgrade_die_task = [&]() {
     Transaction txn3(id3);
     txn_mgr.Begin(&txn3);
-    LOG_DEBUG("txn3 begins, with txn_id %d", txn1.GetTransactionId());
+    LOG_DEBUG("======== txn3 begins, with txn_id %d", txn1.GetTransactionId());
 
-    LOG_DEBUG("txn3 Slock begins");
+    LOG_DEBUG("======== txn3 Slock begins");
     bool res = lock_mgr.LockShared(&txn3, rid);
     EXPECT_TRUE(res);
-    LOG_DEBUG("txn3 Slock ends");
+    LOG_DEBUG("======== txn3 Slock ends");
 
     CheckGrowing(&txn3);
     CheckTxnLockSize(&txn3, 1, 0);
 
-    LOG_DEBUG("txn3 upgrade begins and waits...");
+    LOG_DEBUG("======== txn3 upgrade begins and waits...");
     lock_mgr.LockUpgrade(&txn3, rid);  // waits.... the thread blocks here
-    LOG_DEBUG("txn3 upgrade ends");
+    LOG_DEBUG("======== txn3 upgrade ends");
 
-    LOG_DEBUG("txn3 check aborted");
+    LOG_DEBUG("======== txn3 check aborted");
     CheckAborted(&txn3);
 
-    LOG_DEBUG("Aborting txn3");
+    LOG_DEBUG("======== Aborting txn3");
     txn_mgr.Abort(&txn3);
+    LOG_DEBUG("======== Aborting txn3 done");
   };
 
   txn_mgr.Begin(&txn1);
-  LOG_DEBUG("txn1 begins, with txn_id %d", txn1.GetTransactionId());
+  LOG_DEBUG("======== txn1 begins, with txn_id %d", txn1.GetTransactionId());
 
   txn_mgr.Begin(&txn2);
-  LOG_DEBUG("txn2 begins, with txn_id %d", txn1.GetTransactionId());
+  LOG_DEBUG("======== txn2 begins, with txn_id %d", txn1.GetTransactionId());
 
-  LOG_DEBUG("txn2 Slock begins");
+  LOG_DEBUG("======== txn2 Slock begins");
   bool r1 = lock_mgr.LockShared(&txn2, rid);
   EXPECT_TRUE(r1);
-  LOG_DEBUG("txn2 Slock ends");
+  LOG_DEBUG("======== txn2 Slock ends");
 
   std::thread upgrade_thread{upgrade_die_task};
 
   std::this_thread::sleep_for(std::chrono::microseconds(500));
 
   // now t2 and t3 holds S-lock and t3 is waiting to upgrading
-  LOG_DEBUG("txn1 Xlock begins");
+  LOG_DEBUG("======== txn1 Xlock begins");
   bool r2 = lock_mgr.LockExclusive(&txn1, rid);
   EXPECT_TRUE(r2);
-  LOG_DEBUG("txn1 Xlock ends");
+  LOG_DEBUG("======== txn1 Xlock ends");
 
   EXPECT_TRUE(txn2.GetState() == TransactionState::ABORTED);
 
   // now t2 and t3 are aborted
   upgrade_thread.join();
 
-  LOG_DEBUG("checking abort txn2");
+  LOG_DEBUG("======== checking abort txn2");
   CheckAborted(&txn2);
-  LOG_DEBUG("aborting txn2");
+  LOG_DEBUG("======== aborting txn2");
   txn_mgr.Abort(&txn2);
 
   txn_mgr.Commit(&txn1);
