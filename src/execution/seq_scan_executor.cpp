@@ -37,7 +37,6 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     *rid = iter->GetRid();
     Lock(*rid);
     *tuple = *iter;
-    Unlock(*rid);
 
     if (predicate_ == nullptr || predicate_->Evaluate(&(*tuple), &table_info_->schema_).GetAs<bool>()) {
       // generate tuple from output schema
@@ -46,8 +45,10 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
         values.push_back(col.GetExpr()->Evaluate(tuple, &table_info_->schema_));
       }
       *tuple = Tuple(values, plan_->OutputSchema());
+      Unlock(*rid);
       return true;
     }
+    Unlock(*rid);
   }
   return false;
 }
@@ -58,10 +59,10 @@ void SeqScanExecutor::Lock(const RID &rid) {
   if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
     return;
   }
-  // make sure a txn only lock once
-  bool locked = txn->GetSharedLockSet()->find(rid) != txn->GetSharedLockSet()->end() ||
-                txn->GetExclusiveLockSet()->find(rid) != txn->GetExclusiveLockSet()->end();
-  if (locked) {
+  if (txn->IsSharedLocked(rid)) {
+    return;
+  }
+  if (txn->IsExclusiveLocked(rid)) {
     return;
   }
   exec_ctx_->GetLockManager()->LockShared(txn, rid);
@@ -69,14 +70,9 @@ void SeqScanExecutor::Lock(const RID &rid) {
 
 void SeqScanExecutor::Unlock(const RID &rid) {
   Transaction *txn = exec_ctx_->GetTransaction();
-  if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
-    return;
-  }
   // READ_UNCOMMITED: No Shared Lock
   // READ_COMMITED: Shared Lock unlocked manually
   // REPEATABLE_READ && SERIALIZABLE: Unlocked on commit/abort
-  BUSTUB_ASSERT(txn->GetExclusiveLockSet()->find(rid) == txn->GetExclusiveLockSet()->end(),
-                "seq_scan: unlock a S-lock when X-lock is held");
   if (txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
     exec_ctx_->GetLockManager()->Unlock(txn, rid);
   }

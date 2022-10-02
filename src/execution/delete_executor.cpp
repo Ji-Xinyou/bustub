@@ -61,7 +61,13 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
 void DeleteExecutor::Lock(const RID &rid) {
   Transaction *txn = exec_ctx_->GetTransaction();
-  exec_ctx_->GetLockManager()->LockExclusive(txn, rid);
+  if (!txn->IsExclusiveLocked(rid)) {
+    if (txn->IsSharedLocked(rid)) {
+      GetExecutorContext()->GetLockManager()->LockUpgrade(txn, rid);
+    } else {
+      GetExecutorContext()->GetLockManager()->LockExclusive(txn, rid);
+    }
+  }
 }
 
 // 2PL unlocks when commit/abort

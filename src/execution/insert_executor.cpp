@@ -47,15 +47,13 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       return false;
     }
   } else {
+    // Lock(r);
     if (!child_executor_->Next(&t, &r)) {
       return false;
     }
   }
 
   inserted = table_info_->table_->InsertTuple(t, &r, txn);
-
-  // locked here because if aborted, Unlock() will be called, and it expects RID is locked
-  Lock(r);
 
   // update index
   if (inserted && !index_infos_.empty()) {

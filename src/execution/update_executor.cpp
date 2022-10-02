@@ -41,9 +41,9 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Transaction *txn = exec_ctx_->GetTransaction();
 
   if (child_executor_->Next(&t, &r)) {
-    Lock(r);
     // update table
     Tuple updated_tuple = GenerateUpdatedTuple(t);
+    Lock(r);
     updated = table_info_->table_->UpdateTuple(updated_tuple, r, txn);
     Unlock(r);
 
@@ -92,7 +92,13 @@ auto UpdateExecutor::GenerateUpdatedTuple(const Tuple &src_tuple) -> Tuple {
 
 void UpdateExecutor::Lock(const RID &rid) {
   Transaction *txn = exec_ctx_->GetTransaction();
-  exec_ctx_->GetLockManager()->LockExclusive(txn, rid);
+  if (!txn->IsExclusiveLocked(rid)) {
+    if (txn->IsSharedLocked(rid)) {
+      GetExecutorContext()->GetLockManager()->LockUpgrade(txn, rid);
+    } else {
+      GetExecutorContext()->GetLockManager()->LockExclusive(txn, rid);
+    }
+  }
 }
 
 // 2PL unlocks when commit/abort

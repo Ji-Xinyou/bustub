@@ -59,23 +59,29 @@ void TransactionManager::Commit(Transaction *txn) {
 }
 
 void TransactionManager::Abort(Transaction *txn) {
+  LOG_DEBUG("===== txn_mgr: Aborting txn %d", txn->GetTransactionId());
   txn->SetState(TransactionState::ABORTED);
+  LOG_DEBUG("===== txn_mgr: rolling back table_write_set");
   // Rollback before releasing the lock.
   auto table_write_set = txn->GetWriteSet();
   while (!table_write_set->empty()) {
     auto &item = table_write_set->back();
     auto table = item.table_;
     if (item.wtype_ == WType::DELETE) {
+      LOG_DEBUG("type: DELETE");
       table->RollbackDelete(item.rid_, txn);
     } else if (item.wtype_ == WType::INSERT) {
+      LOG_DEBUG("type: INSERT");
       // Note that this also releases the lock when holding the page latch.
       table->ApplyDelete(item.rid_, txn);
     } else if (item.wtype_ == WType::UPDATE) {
+      LOG_DEBUG("type: UPDATE");
       table->UpdateTuple(item.tuple_, item.rid_, txn);
     }
     table_write_set->pop_back();
   }
   table_write_set->clear();
+  LOG_DEBUG("===== txn_mgr: rolling back index_write_set");
   // Rollback index updates
   auto index_write_set = txn->GetIndexWriteSet();
   while (!index_write_set->empty()) {
@@ -87,11 +93,14 @@ void TransactionManager::Abort(Transaction *txn) {
     auto new_key = item.tuple_.KeyFromTuple(table_info->schema_, *(index_info->index_->GetKeySchema()),
                                             index_info->index_->GetKeyAttrs());
     if (item.wtype_ == WType::DELETE) {
+      LOG_DEBUG("type: DELETE");
       index_info->index_->InsertEntry(new_key, item.rid_, txn);
     } else if (item.wtype_ == WType::INSERT) {
+      LOG_DEBUG("type: INSERT");
       index_info->index_->DeleteEntry(new_key, item.rid_, txn);
     } else if (item.wtype_ == WType::UPDATE) {
       // Delete the new key and insert the old key
+      LOG_DEBUG("type: UPDATE");
       index_info->index_->DeleteEntry(new_key, item.rid_, txn);
       auto old_key = item.old_tuple_.KeyFromTuple(table_info->schema_, *(index_info->index_->GetKeySchema()),
                                                   index_info->index_->GetKeyAttrs());
@@ -103,6 +112,7 @@ void TransactionManager::Abort(Transaction *txn) {
   index_write_set->clear();
 
   // Release all the locks.
+  LOG_DEBUG("===== txn_mgr: releasing all the locks");
   ReleaseLocks(txn);
   // Release the global transaction latch.
   global_txn_latch_.RUnlock();
