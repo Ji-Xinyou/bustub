@@ -24,6 +24,7 @@ SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNod
       end_(nullptr, RID{}, nullptr) {}
 
 void SeqScanExecutor::Init() {
+  LOG_DEBUG("====== SeqScanExecutor: Init() called");
   current_ = table_info_->table_->Begin(exec_ctx_->GetTransaction());
   end_ = table_info_->table_->End();
 }
@@ -44,6 +45,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       for (const auto &col : plan_->OutputSchema()->GetColumns()) {
         values.push_back(col.GetExpr()->Evaluate(tuple, &table_info_->schema_));
       }
+      LOG_DEBUG("===== SeqScan: Emitting one tuple, rid = %s", rid->ToString().c_str());
       *tuple = Tuple(values, plan_->OutputSchema());
       Unlock(*rid);
       return true;
@@ -55,20 +57,17 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
 // SeqScan is RDONLY, only requires a S-lock
 void SeqScanExecutor::Lock(const RID &rid) {
+  LOG_DEBUG("===== SeqscanExecutor: Lock() on rid %s", rid.ToString().c_str());
   Transaction *txn = exec_ctx_->GetTransaction();
-  if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
-    return;
-  }
-  if (txn->IsSharedLocked(rid)) {
-    return;
-  }
-  if (txn->IsExclusiveLocked(rid)) {
+  if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED || txn->IsSharedLocked(rid) ||
+      txn->IsExclusiveLocked(rid)) {
     return;
   }
   exec_ctx_->GetLockManager()->LockShared(txn, rid);
 }
 
 void SeqScanExecutor::Unlock(const RID &rid) {
+  LOG_DEBUG("===== SeqscanExecutor: Unlock() on rid %s", rid.ToString().c_str());
   Transaction *txn = exec_ctx_->GetTransaction();
   // READ_UNCOMMITED: No Shared Lock
   // READ_COMMITED: Shared Lock unlocked manually

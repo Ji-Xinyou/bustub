@@ -25,9 +25,8 @@ DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *
       index_infos_(exec_ctx->GetCatalog()->GetTableIndexes(table_info_->name_)) {}
 
 void DeleteExecutor::Init() {
-  if (child_executor_) {
-    child_executor_->Init();
-  }
+  LOG_DEBUG("===== DeleteExecutor::Init() called");
+  child_executor_->Init();
 }
 
 auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
@@ -40,6 +39,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // update table
     Lock(r);
     deleted = table_info_->table_->MarkDelete(r, txn);
+    LOG_DEBUG("===== DeleteExecutor: deleted %d on rid %s", deleted, r.ToString().c_str());
     Unlock(r);
   }
 
@@ -60,6 +60,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 }
 
 void DeleteExecutor::Lock(const RID &rid) {
+  LOG_DEBUG("===== DeleteExecutor: Lock() on rid %s", rid.ToString().c_str());
   Transaction *txn = exec_ctx_->GetTransaction();
   if (!txn->IsExclusiveLocked(rid)) {
     if (txn->IsSharedLocked(rid)) {
