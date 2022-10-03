@@ -184,7 +184,7 @@ auto LockManager::Unlock(Transaction *txn, const RID &rid) -> bool {
   }
 
   // now the lock is logically unlocked, we can notify the threads waiting on the lock now
-  if (txn->GetState() != TransactionState::ABORTED) {
+  if (!Wounded(txn)) {
     if (mode == LockMode::SHARED) {
       q->nsharing_--;
       if (q->nsharing_ == 0) {
@@ -272,6 +272,7 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
         }
         it->granted_ = false;
         TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+        WoundTransaction(txn);
         q->cv_.notify_all();
       } else if (it->lock_mode_ == LockMode::SHARED) {  // S-lock
         if (into == LockMode::EXCLUSIVE) {              // X-lock want to holds, meeting S-lock
@@ -281,6 +282,7 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
           }
           it->granted_ = false;
           TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+          WoundTransaction(txn);
           q->cv_.notify_all();
         }
       }
@@ -288,10 +290,21 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
         LOG_DEBUG("aborting txn %d, upgrade aborted", it->txn_id_);
         q->upgrading_ = INVALID_TXN_ID;
         TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
+        WoundTransaction(txn);
         q->cv_.notify_all();
       }
     }
   }
+}
+
+void LockManager::WoundTransaction(Transaction *txn) {
+  if (std::find(wounded_txns_.begin(), wounded_txns_.end(), txn->GetTransactionId()) == wounded_txns_.end()) {
+    wounded_txns_.emplace_back(txn->GetTransactionId());
+  }
+}
+
+bool LockManager::Wounded(Transaction *txn) {
+  return (std::find(wounded_txns_.begin(), wounded_txns_.end(), txn->GetTransactionId()) != wounded_txns_.end());
 }
 
 }  // namespace bustub

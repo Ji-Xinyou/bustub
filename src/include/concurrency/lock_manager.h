@@ -165,6 +165,10 @@ class LockManager {
    */
   void WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into);
 
+  void WoundTransaction(Transaction *txn);
+
+  bool Wounded(Transaction *txn);
+
   /**
    * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
    * If not the FIRST time, we do nothing
@@ -178,6 +182,8 @@ class LockManager {
 
   /** Lock table for lock requests, the queue is per-RID */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
+
+  std::vector<txn_id_t> wounded_txns_{};
 };
 
 }  // namespace bustub

@@ -286,7 +286,7 @@ void WoundUpgradeTest() {
   CheckCommitted(&txn1);
 }
 
-// TEST(LockManagerTest, WoundWaitBasicTest) { WoundUpgradeTest(); }
+// TEST(LockManagerTest, WoundWaitBasicTest) { WoundWaitBasicTest(); }
 
 TEST(LockManagerTest, WoundUpgrade) { WoundUpgradeTest(); }
 
