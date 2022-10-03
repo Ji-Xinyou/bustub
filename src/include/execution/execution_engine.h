@@ -70,9 +70,8 @@ class ExecutionEngine {
           result_set->push_back(tuple);
         }
       }
-    } catch (Exception &e) {
-      // TODO(student): handle exceptions
-      return false;
+    } catch (TransactionAbortException &e) {
+      txn_mgr_->Abort(exec_ctx->GetTransactionManager()->GetTransaction(e.GetTransactionId()));
     }
 
     return true;

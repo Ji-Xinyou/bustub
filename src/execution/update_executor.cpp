@@ -56,7 +56,7 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         it->index_->InsertEntry(new_key, r, txn);
 
         // When rollback, txn_mgr delete new_key, insert old_key
-        IndexWriteRecord record(r, table_info_->oid_, WType::UPDATE, updated_tuple, t, table_info_->oid_,
+        IndexWriteRecord record(r, table_info_->oid_, WType::UPDATE, updated_tuple, t, it->index_oid_,
                                 exec_ctx_->GetCatalog());
         txn->GetIndexWriteSet()->emplace_back(record);
       }

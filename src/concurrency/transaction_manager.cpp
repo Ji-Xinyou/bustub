@@ -90,6 +90,7 @@ void TransactionManager::Abort(Transaction *txn) {
     // Metadata identifying the table that should be deleted from.
     TableInfo *table_info = catalog->GetTable(item.table_oid_);
     IndexInfo *index_info = catalog->GetIndex(item.index_oid_);
+    BUSTUB_ASSERT(index_info != nullptr, "null index_info");
     auto new_key = item.tuple_.KeyFromTuple(table_info->schema_, *(index_info->index_->GetKeySchema()),
                                             index_info->index_->GetKeyAttrs());
     if (item.wtype_ == WType::DELETE) {

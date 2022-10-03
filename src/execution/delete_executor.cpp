@@ -50,8 +50,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       it->index_->DeleteEntry(key, r, txn);
 
       // When rollback, txn_mgr insert t, does not use old_tuple
-      IndexWriteRecord record(r, table_info_->oid_, WType::DELETE, t, Tuple{}, table_info_->oid_,
-                              exec_ctx_->GetCatalog());
+      IndexWriteRecord record(r, table_info_->oid_, WType::DELETE, t, Tuple{}, it->index_oid_, exec_ctx_->GetCatalog());
       txn->GetIndexWriteSet()->emplace_back(record);
     }
   }
