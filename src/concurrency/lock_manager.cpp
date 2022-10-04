@@ -184,7 +184,7 @@ auto LockManager::Unlock(Transaction *txn, const RID &rid) -> bool {
   }
 
   // now the lock is logically unlocked, we can notify the threads waiting on the lock now
-  if (!Wounded(txn)) {
+  if (!Wounded(txn->GetTransactionId())) {
     if (mode == LockMode::SHARED) {
       q->nsharing_--;
       if (q->nsharing_ == 0) {
@@ -227,7 +227,7 @@ void LockManager::TryAbortOnShrink(Transaction *txn) {
 // on deadlock, the deadlock prevention checks for cycles, and set victim transactions to abort state
 // therefore, after the cond.wait(), the txn may be aborted due to deadlock, we check for this
 bool LockManager::TryAbortOnDeadlock(Transaction *txn, LockRequestQueue *q) {
-  if (txn->GetState() == TransactionState::ABORTED) {
+  if (Wounded(txn->GetTransactionId())) {
     auto iter = TxnToIter(txn, q);
     iter->granted_ = false;
     q->cv_.notify_all();
@@ -272,7 +272,7 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
         }
         it->granted_ = false;
         TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
-        WoundTransaction(txn);
+        WoundTransaction(it->txn_id_);
         q->cv_.notify_all();
       } else if (it->lock_mode_ == LockMode::SHARED) {  // S-lock
         if (into == LockMode::EXCLUSIVE) {              // X-lock want to holds, meeting S-lock
@@ -282,7 +282,7 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
           }
           it->granted_ = false;
           TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
-          WoundTransaction(txn);
+          WoundTransaction(it->txn_id_);
           q->cv_.notify_all();
         }
       }
@@ -290,21 +290,21 @@ void LockManager::WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into
         LOG_DEBUG("aborting txn %d, upgrade aborted", it->txn_id_);
         q->upgrading_ = INVALID_TXN_ID;
         TransactionManager::GetTransaction(it->txn_id_)->SetState(TransactionState::ABORTED);
-        WoundTransaction(txn);
+        WoundTransaction(it->txn_id_);
         q->cv_.notify_all();
       }
     }
   }
 }
 
-void LockManager::WoundTransaction(Transaction *txn) {
-  if (std::find(wounded_txns_.begin(), wounded_txns_.end(), txn->GetTransactionId()) == wounded_txns_.end()) {
-    wounded_txns_.emplace_back(txn->GetTransactionId());
+void LockManager::WoundTransaction(txn_id_t id) {
+  if (std::find(wounded_txns_.begin(), wounded_txns_.end(), id) == wounded_txns_.end()) {
+    wounded_txns_.emplace_back(id);
   }
 }
 
-bool LockManager::Wounded(Transaction *txn) {
-  return (std::find(wounded_txns_.begin(), wounded_txns_.end(), txn->GetTransactionId()) != wounded_txns_.end());
+bool LockManager::Wounded(txn_id_t id) {
+  return (std::find(wounded_txns_.begin(), wounded_txns_.end(), id) != wounded_txns_.end());
 }
 
 }  // namespace bustub

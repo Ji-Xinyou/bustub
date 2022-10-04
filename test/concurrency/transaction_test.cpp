@@ -31,6 +31,7 @@
 #include "execution/expressions/column_value_expression.h"
 #include "execution/expressions/comparison_expression.h"
 #include "execution/expressions/constant_value_expression.h"
+#include "execution/plans/delete_plan.h"
 #include "execution/plans/limit_plan.h"
 #include "execution/plans/nested_index_join_plan.h"
 #include "execution/plans/seq_scan_plan.h"
@@ -207,6 +208,65 @@ TEST_F(TransactionTest, SimpleInsertRollbackTest) {
   LOG_DEBUG("txn commit");
   GetTxnManager()->Commit(txn2);
   delete txn2;
+}
+
+TEST_F(TransactionTest, SimpleDeleteRollbackTest) {
+  // txn1: INSERT INTO empty_table2 VALUES (200, 20), (201, 21), (202, 22)
+  // txn2: DELETE * FROM empty_table2
+  // txn2: abort
+  // txn3: SELECT * FROM empty_table2;
+  auto txn1 = GetTxnManager()->Begin();
+  auto exec_ctx1 = std::make_unique<ExecutorContext>(txn1, GetCatalog(), GetBPM(), GetTxnManager(), GetLockManager());
+  // Create Values to insert
+  std::vector<Value> val1{ValueFactory::GetIntegerValue(200), ValueFactory::GetIntegerValue(20)};
+  std::vector<Value> val2{ValueFactory::GetIntegerValue(201), ValueFactory::GetIntegerValue(21)};
+  std::vector<Value> val3{ValueFactory::GetIntegerValue(202), ValueFactory::GetIntegerValue(22)};
+  std::vector<std::vector<Value>> raw_vals{val1, val2, val3};
+  // Create insert plan node
+  auto table_info = exec_ctx1->GetCatalog()->GetTable("empty_table2");
+  InsertPlanNode insert_plan{std::move(raw_vals), table_info->oid_};
+
+  LOG_DEBUG("txn1 execute");
+  GetExecutionEngine()->Execute(&insert_plan, nullptr, txn1, exec_ctx1.get());
+  LOG_DEBUG("txn1 commit");
+  GetTxnManager()->Commit(txn1);
+  LOG_DEBUG("txn1 commit done");
+  delete txn1;
+
+  {
+    auto txn2 = GetTxnManager()->Begin();
+    auto exec_ctx2 = std::make_unique<ExecutorContext>(txn2, GetCatalog(), GetBPM(), GetTxnManager(), GetLockManager());
+    auto &schema = table_info->schema_;
+    auto col_a = MakeColumnValueExpression(schema, 0, "colA");
+    auto col_b = MakeColumnValueExpression(schema, 0, "colB");
+    auto out_schema = MakeOutputSchema({{"colA", col_a}, {"colB", col_b}});
+    SeqScanPlanNode scan_plan{out_schema, nullptr, table_info->oid_};
+    DeletePlanNode delete_plan{&scan_plan, table_info->oid_};
+    GetExecutionEngine()->Execute(&delete_plan, nullptr, txn2, exec_ctx2.get());
+    GetTxnManager()->Abort(txn2);
+    delete txn2;
+  }
+
+  // Iterate through table make sure that values were not inserted.
+  auto txn3 = GetTxnManager()->Begin();
+  auto exec_ctx3 = std::make_unique<ExecutorContext>(txn3, GetCatalog(), GetBPM(), GetTxnManager(), GetLockManager());
+  auto &schema = table_info->schema_;
+  auto col_a = MakeColumnValueExpression(schema, 0, "colA");
+  auto col_b = MakeColumnValueExpression(schema, 0, "colB");
+  auto out_schema = MakeOutputSchema({{"colA", col_a}, {"colB", col_b}});
+  SeqScanPlanNode scan_plan{out_schema, nullptr, table_info->oid_};
+
+  std::vector<Tuple> result_set;
+  LOG_DEBUG("txn3 execute");
+  GetExecutionEngine()->Execute(&scan_plan, &result_set, txn3, exec_ctx3.get());
+
+  // Size
+  ASSERT_EQ(result_set.size(), 3);
+  std::vector<RID> rids;
+
+  LOG_DEBUG("txn commit");
+  GetTxnManager()->Commit(txn3);
+  delete txn3;
 }
 
 // NOLINTNEXTLINE

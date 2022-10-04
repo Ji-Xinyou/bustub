@@ -71,7 +71,7 @@ class ExecutionEngine {
         }
       }
     } catch (TransactionAbortException &e) {
-      txn_mgr_->Abort(exec_ctx->GetTransactionManager()->GetTransaction(e.GetTransactionId()));
+      // txn_mgr_->Abort(exec_ctx->GetTransactionManager()->GetTransaction(e.GetTransactionId()));
     }
 
     return true;

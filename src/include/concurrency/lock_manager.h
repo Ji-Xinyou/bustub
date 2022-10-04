@@ -165,9 +165,9 @@ class LockManager {
    */
   void WoundWait(Transaction *txn, LockRequestQueue *q, LockMode into);
 
-  void WoundTransaction(Transaction *txn);
+  void WoundTransaction(txn_id_t id);
 
-  bool Wounded(Transaction *txn);
+  bool Wounded(txn_id_t id);
 
   /**
    * If the rid is the FIRST time on the lock_table_, we initialize it with an empty queue
